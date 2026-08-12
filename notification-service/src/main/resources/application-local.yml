@@ -1,0 +1,74 @@
+# Cake Delight - Notification Service - `local` profile (H2 in-memory)
+#
+# LOCAL DEVELOPMENT ONLY. Everything here is throwaway: the database lives inside the JVM, so all
+# notification records are LOST ON RESTART. PostgreSQL 16 via Docker Compose or Kubernetes remains
+# the real deployment path and the DEFAULT profile: application.yml is untouched and still requires
+# SPRING_DATASOURCE_* and SPRING_KAFKA_BOOTSTRAP_SERVERS from the environment, and still runs
+# classpath:db/migration. The H2 credentials below are throwaway defaults, not secrets.
+#
+# This profile is never activated automatically. Activate it explicitly:
+#   mvn spring-boot:run -Dspring-boot.run.profiles=local
+#   java -jar target/notification-service-1.0.0.jar --spring.profiles.active=local
+#
+# Unlike src/test/resources/application-test.yml, this file lives in src/main/resources and so is
+# packaged into the fat jar, which is what makes the `java -jar` form above work.
+#
+# Profile files merge over application.yml, so only the deltas live here. Server port, actuator,
+# springdoc, the delivery retry budget and the Kafka deserializers are inherited unchanged.
+#
+# CAVEAT specific to this service: on H2 the partial unique index uq_notifications_order_sent
+# cannot be created, so the database does NOT enforce "at most one SENT notification per order".
+# See db/h2/V1__create_notifications.sql for the full explanation.
+spring:
+  datasource:
+    # MODE=PostgreSQL            -> PostgreSQL dialect compatibility
+    # DATABASE_TO_LOWER=TRUE     -> unquoted identifiers fold to lower case, as PostgreSQL does
+    # DEFAULT_NULL_ORDERING=HIGH -> NULLs sort last on ASC, matching PostgreSQL
+    # DB_CLOSE_DELAY=-1          -> keep the in-memory database (and the migrated schema) alive
+    #                               for the life of the JVM, not just the first connection
+    url: jdbc:h2:mem:notification_db;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    # `sa` with a blank password is the H2 default for an ephemeral in-memory database that lives
+    # and dies with the JVM. These are not secrets and guard nothing, so inlining them does not
+    # breach the no-credentials-in-config rule. Real credentials still come from the environment.
+    username: sa
+    password: ""
+
+  jpa:
+    hibernate:
+      # Unchanged from the default profile, and stated here deliberately: Flyway owns the schema on
+      # H2 too, and `validate` is what catches drift between the entities and db/h2.
+      ddl-auto: validate
+
+  flyway:
+    # H2-compatible translation of db/migration; see the divergence notes in that file.
+    locations: classpath:db/h2
+
+  kafka:
+    # Defaulted so the service starts with no environment set up at all.
+    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      properties:
+        # BROKER-FREE RUN: the listener stays fully wired - it is NOT disabled - so it picks up
+        # events the moment a broker appears. With no broker present it simply cannot connect, and
+        # the client retries the connection forever. Stretching the reconnect ceiling to 30 s turns
+        # a continuous stream of connection failures into an occasional one, which keeps the console
+        # readable during a demo without changing behaviour once a broker is reachable.
+        reconnect.backoff.ms: 1000
+        reconnect.backoff.max.ms: 30000
+  h2:
+    # Browse the in-memory schema at http://localhost:8084/h2-console
+    # (JDBC URL above, user `sa`, empty password). Local profile only.
+    console:
+      enabled: true
+      path: /h2-console
+
+logging:
+  level:
+    # Same reason as the reconnect backoff above: with no broker, NetworkClient logs a WARN per
+    # connection attempt ("Connection to node -1 could not be established") and the consumer
+    # internals log coordinator-discovery failures. Both are expected here and say nothing useful,
+    # so they are muted to ERROR. Genuine client errors still surface. Local profile only - the
+    # default profile keeps stock Kafka client logging.
+    org.apache.kafka.clients.NetworkClient: ERROR
+    org.apache.kafka.clients.consumer.internals: ERROR

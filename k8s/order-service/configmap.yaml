@@ -1,0 +1,23 @@
+# order-service non-secret configuration (Requirement 11.5).
+# Safe to commit: a JDBC URL, the broker bootstrap address, and one downstream service
+# URL. Credentials live in order-service/secret.yaml.
+#
+# order-db is the Service created by k8s/postgres/order-db.yaml, and only order-service
+# points here (Requirement 10.1). kafka is the broker Service from k8s/kafka/service.yaml.
+# CATALOG_SERVICE_URL is the cross-service read path: order-service captures cake prices
+# through the catalog REST API, never by reaching into catalog_db (Requirement 10.2).
+#
+# Variable names match the docker-compose environment block exactly.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: order-service-config
+  namespace: cake-delight
+  labels:
+    app.kubernetes.io/name: order-service
+    app.kubernetes.io/component: microservice
+    app.kubernetes.io/part-of: cake-delight
+data:
+  SPRING_DATASOURCE_URL: jdbc:postgresql://order-db:5432/order_db
+  SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+  CATALOG_SERVICE_URL: http://catalog-service:8081

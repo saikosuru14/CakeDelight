@@ -1,0 +1,20 @@
+# notification-service internal endpoint (Requirement 11.3).
+# ClusterIP: reachable from the gateway only, never from outside the cluster
+# (Requirement 9.1). DNS for callers: notification-service:8084
+apiVersion: v1
+kind: Service
+metadata:
+  name: notification-service
+  namespace: cake-delight
+  labels:
+    app.kubernetes.io/name: notification-service
+    app.kubernetes.io/component: microservice
+    app.kubernetes.io/part-of: cake-delight
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: notification-service
+  ports:
+    - name: http
+      port: 8084
+      targetPort: http

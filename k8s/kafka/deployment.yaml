@@ -1,0 +1,119 @@
+# Single-node Kafka in KRaft mode (broker + controller in one process).
+# Bootstrap servers for clients: kafka.cake-delight.svc.cluster.local:9092
+# Topic `order.completed` is created on first use by auto-creation with the broker
+# defaults below: 1 partition, replication factor 1 (structure.md, design.md).
+#
+# Storage is an emptyDir on purpose: the log directory is scratch space for a
+# single-node demo broker, and a pod restart replays nothing. No PVC, no
+# StatefulSet, no external listener.
+#
+# No HorizontalPodAutoscaler for this component, by design. This is a single-node KRaft
+# process that is its own controller quorum: KAFKA_NODE_ID is a fixed "1" and
+# KAFKA_CONTROLLER_QUORUM_VOTERS is 1@localhost:9093, so a second pod from the same
+# template would claim the same node id and the same single-voter quorum. Growing a Kafka
+# cluster means distinct broker identities, real replication factors, and a multi-voter
+# quorum - a different design, not a replica count change. Hence replicas: 1 and
+# strategy: Recreate. HPAs exist only for the stateless services and the gateway - see
+# k8s/README.md.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka
+  namespace: cake-delight
+  labels:
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/component: message-broker
+    app.kubernetes.io/part-of: cake-delight
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kafka
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kafka
+        app.kubernetes.io/component: message-broker
+        app.kubernetes.io/part-of: cake-delight
+    spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: kafka
+          image: apache/kafka:3.7.1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: broker
+              containerPort: 9092
+            - name: controller
+              containerPort: 9093
+          env:
+            # KRaft: this node is both the broker and the controller quorum.
+            - name: KAFKA_NODE_ID
+              value: "1"
+            - name: KAFKA_PROCESS_ROLES
+              value: broker,controller
+            - name: KAFKA_CONTROLLER_QUORUM_VOTERS
+              value: 1@localhost:9093
+            - name: KAFKA_CONTROLLER_LISTENER_NAMES
+              value: CONTROLLER
+            - name: KAFKA_LISTENERS
+              value: PLAINTEXT://:9092,CONTROLLER://:9093
+            - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
+              value: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+            - name: KAFKA_INTER_BROKER_LISTENER_NAME
+              value: PLAINTEXT
+            # Clients resolve the advertised name through cluster DNS.
+            - name: KAFKA_ADVERTISED_LISTENERS
+              value: PLAINTEXT://kafka.cake-delight.svc.cluster.local:9092
+            # Single-node defaults: everything replication factor 1.
+            - name: KAFKA_AUTO_CREATE_TOPICS_ENABLE
+              value: "true"
+            - name: KAFKA_NUM_PARTITIONS
+              value: "1"
+            - name: KAFKA_DEFAULT_REPLICATION_FACTOR
+              value: "1"
+            - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
+              value: "1"
+            - name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR
+              value: "1"
+            - name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR
+              value: "1"
+            - name: KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS
+              value: "0"
+            - name: KAFKA_LOG_DIRS
+              value: /var/lib/kafka/data
+            # Fixed cluster id so a restart formats the scratch log dir the same way.
+            - name: CLUSTER_ID
+              value: cake-delight-kraft-01
+            - name: KAFKA_HEAP_OPTS
+              value: -Xms256m -Xmx512m
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/kafka/data
+          readinessProbe:
+            tcpSocket:
+              port: broker
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: broker
+            initialDelaySeconds: 45
+            periodSeconds: 20
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+      volumes:
+        - name: data
+          emptyDir: {}

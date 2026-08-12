@@ -1,0 +1,40 @@
+# Cake Delight - Rating Service - `test` profile (H2 in-memory)
+#
+# TEST-ONLY. This file lives in src/test/resources, so it is never packaged into the application
+# jar or the container image. PostgreSQL 16 stays the production target: src/main/resources/
+# application.yml is untouched and still takes SPRING_DATASOURCE_* from the environment and still
+# runs classpath:db/migration.
+#
+# Activate it from a test with @ActiveProfiles("test").
+#
+# Profile files merge over application.yml, so only the deltas needed to run against H2 live here.
+# Server port, actuator health groups, springdoc and logging are inherited unchanged.
+spring:
+  datasource:
+    # MODE=PostgreSQL            -> PostgreSQL dialect compatibility
+    # DATABASE_TO_LOWER=TRUE     -> unquoted identifiers fold to lower case, as PostgreSQL does
+    # DEFAULT_NULL_ORDERING=HIGH -> NULLs sort last on ASC, matching PostgreSQL
+    # DB_CLOSE_DELAY=-1          -> keep the in-memory database (and the migrated schema) alive
+    #                               for the life of the JVM, not just the first connection
+    url: jdbc:h2:mem:rating_db;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    # `sa` with a blank password is the H2 default for a throwaway in-memory database that lives
+    # and dies with the test JVM. These guard nothing and are not secrets, so inlining them here
+    # does not breach the no-credentials-in-config rule. This test file is the only exception;
+    # real credentials still come from the environment.
+    username: sa
+    password: ""
+
+  jpa:
+    hibernate:
+      # Unchanged from the default profile, and deliberately so: Flyway owns the schema and the
+      # entities are still validated against it, so entity/schema drift fails the test run.
+      ddl-auto: validate
+
+  flyway:
+    enabled: true
+    # H2-compatible mirror of db/migration. See the header of each file in
+    # src/test/resources/db/migration-h2/ for the exact divergences.
+    locations: classpath:db/migration-h2
+    baseline-on-migrate: false
+    validate-on-migrate: true

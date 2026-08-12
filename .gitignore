@@ -1,0 +1,63 @@
+# ---------------------------------------------------------------- build output
+# Each service produces a ~40-80 MB Spring Boot fat jar. Never commit these:
+# they are reproducible with `mvn clean package` and would add ~313 MB to history.
+target/
+*.jar
+*.war
+*.class
+
+# ---------------------------------------------------------------- logs and scratch
+*.log
+logs/
+downloaded-logs/
+
+# ---------------------------------------------------------------- local runtime data
+# Kafka KRaft log directory and any local H2 file databases, if ever used.
+kdata/
+kdata-logs/
+*.db
+*.mv.db
+*.trace.db
+
+# ---------------------------------------------------------------- IDE and editor
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.project
+.classpath
+*.swp
+*~
+
+# ---------------------------------------------------------------- OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# ---------------------------------------------------------------- node
+# web-ui has no dependencies and no build step, but guard against future ones.
+node_modules/
+npm-debug.log*
+
+# ---------------------------------------------------------------- secrets
+# Nothing in this repository should carry a real credential. These patterns are a
+# backstop: committed k8s Secrets use REPLACE_ME placeholders, and the compose file
+# uses throwaway local-only values.
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.jks
+secrets.yaml
+
+# ---------------------------------------------------------------- agent scratch
+# Throwaway helper scripts and captured output used while setting the project up.
+gitcommit.ps1
+gitcommit.txt
+fixcommit.ps1
+fixcommit.txt
+gitstate.ps1
+gitstate.txt

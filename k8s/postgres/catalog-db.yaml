@@ -1,0 +1,115 @@
+# catalog_db - owned exclusively by catalog-service (Requirement 10.1).
+# Service DNS for consumers: catalog-db.cake-delight.svc.cluster.local:5432
+# A Deployment (not a StatefulSet) is used deliberately: exactly one replica, one
+# pre-created PVC, no ordinal identity or per-replica volume templating needed.
+#
+# No HorizontalPodAutoscaler for this component, by design. It is stateful and pinned to a
+# single replica: the PVC below is ReadWriteOnce, so the volume cannot be attached to a
+# second pod, and even if it could, two Postgres processes over one data directory is
+# corruption, not capacity. That is also why the strategy is Recreate. Scaling a database
+# horizontally means replication or sharding, which is a different design, not a replica
+# count change. HPAs exist only for the stateless services and the gateway - see
+# k8s/README.md.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: catalog-db-data
+  namespace: cake-delight
+  labels:
+    app.kubernetes.io/name: catalog-db
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: cake-delight
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog-db
+  namespace: cake-delight
+  labels:
+    app.kubernetes.io/name: catalog-db
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: cake-delight
+spec:
+  replicas: 1
+  # Recreate, not RollingUpdate: a ReadWriteOnce volume cannot be attached to two pods.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: catalog-db
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: catalog-db
+        app.kubernetes.io/component: database
+        app.kubernetes.io/part-of: cake-delight
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16.4
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: catalog_db
+            # PGDATA lives in a subdirectory so initdb is not blocked by a
+            # lost+found entry at the volume mount root.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          # Credentials come from the Secret, never inlined here (Requirement 11.5).
+          envFrom:
+            - secretRef:
+                name: catalog-db-credentials
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "$(POSTGRES_USER)", "-d", "catalog_db"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "$(POSTGRES_USER)", "-d", "catalog_db"]
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: catalog-db-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalog-db
+  namespace: cake-delight
+  labels:
+    app.kubernetes.io/name: catalog-db
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: cake-delight
+spec:
+  # Internal infrastructure: never reachable from outside the cluster (Requirement 9.1).
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: catalog-db
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres

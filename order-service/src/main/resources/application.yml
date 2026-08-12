@@ -1,0 +1,94 @@
+# Cake Delight - Order Service
+# All environment specific values come from environment variables. No credentials here.
+server:
+  port: 8082
+
+spring:
+  application:
+    name: order-service
+
+  datasource:
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      # Flyway owns the schema; Hibernate never mutates it.
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    # Fail fast when pointed at a database owned by another service (Requirement 10.3).
+    baseline-on-migrate: false
+    validate-on-migrate: true
+
+  kafka:
+    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: all
+      properties:
+        # The order identifier is the message key, so no type header is needed downstream.
+        spring.json.add.type.headers: false
+
+# Outbound read of cake data owned by the Catalog Service (Requirement 10.2).
+catalog:
+  service:
+    url: ${CATALOG_SERVICE_URL}
+    connect-timeout: 5s
+    read-timeout: 5s
+    # Bounded retry for transient failures only: connect failure, read timeout, 5xx. A 404 and an
+    # unavailable cake are deterministic answers and are never retried. Worst case added delay is
+    # 200 ms + 400 ms = 600 ms across the two backoffs, so the total call stays well inside a
+    # timeout a client would tolerate. No circuit breaker.
+    retry:
+      max-attempts: 3
+      initial-backoff-ms: 200
+      multiplier: 2.0
+      max-backoff-ms: 1000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # health,info for probes and build identity; metrics,prometheus for basic monitoring.
+        # `prometheus` is contributed by micrometer-registry-prometheus and serves the scrape
+        # payload at /actuator/prometheus. No Prometheus server or dashboard stack is deployed -
+        # the endpoint is exposed so a scraper can be pointed at it.
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+      group:
+        liveness:
+          include: livenessState
+        readiness:
+          include: readinessState,db
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+logging:
+  pattern:
+    level: "%5p [${spring.application.name:},requestId=%X{requestId:-}]"
+  level:
+    com.cakedelight.order: INFO

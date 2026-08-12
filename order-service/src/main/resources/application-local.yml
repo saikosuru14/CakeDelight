@@ -1,0 +1,85 @@
+# Cake Delight - Order Service - `local` profile (H2 in-memory)
+#
+# LOCAL DEVELOPMENT ONLY. Everything here is throwaway: the database lives inside the JVM, so all
+# baskets and orders are LOST ON RESTART. PostgreSQL 16 via Docker Compose or Kubernetes remains
+# the real deployment path and the DEFAULT profile: application.yml is untouched and still requires
+# SPRING_DATASOURCE_*, CATALOG_SERVICE_URL and SPRING_KAFKA_BOOTSTRAP_SERVERS from the environment,
+# and still runs classpath:db/migration. The H2 credentials below are throwaway defaults, not
+# secrets.
+#
+# This profile is never activated automatically. Activate it explicitly:
+#   mvn spring-boot:run -Dspring-boot.run.profiles=local
+#   java -jar target/order-service-1.0.0.jar --spring.profiles.active=local
+#
+# Unlike src/test/resources/application-test.yml, this file lives in src/main/resources and so is
+# packaged into the fat jar, which is what makes the `java -jar` form above work.
+#
+# Profile files merge over application.yml, so only the deltas live here. Server port, actuator,
+# springdoc, logging, the catalog retry budget and the Kafka serializers are inherited unchanged.
+spring:
+  datasource:
+    # MODE=PostgreSQL            -> PostgreSQL dialect compatibility
+    # DATABASE_TO_LOWER=TRUE     -> unquoted identifiers fold to lower case, as PostgreSQL does
+    # DEFAULT_NULL_ORDERING=HIGH -> NULLs sort last on ASC, matching PostgreSQL
+    # DB_CLOSE_DELAY=-1          -> keep the in-memory database (and the migrated schema) alive
+    #                               for the life of the JVM, not just the first connection
+    url: jdbc:h2:mem:order_db;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    # `sa` with a blank password is the H2 default for an ephemeral in-memory database that lives
+    # and dies with the JVM. These are not secrets and guard nothing, so inlining them does not
+    # breach the no-credentials-in-config rule. Real credentials still come from the environment.
+    username: sa
+    password: ""
+
+  jpa:
+    hibernate:
+      # Unchanged from the default profile, and stated here deliberately: Flyway owns the schema on
+      # H2 too, and `validate` is what catches drift between the entities and db/h2.
+      ddl-auto: validate
+
+  flyway:
+    # H2-compatible translation of db/migration; see the divergence notes in that file.
+    locations: classpath:db/h2
+
+  kafka:
+    # Defaulted so the service starts with no environment set up at all. An absent broker is the
+    # expected case for a local run: checkout still succeeds and persists the order, the publish
+    # attempt just fails and is logged at ERROR.
+    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      properties:
+        # BROKER-FREE RUN, THE IMPORTANT BIT: with no broker listening, the producer cannot fetch
+        # topic metadata, and send() blocks waiting for it up to max.block.ms - 60 SECONDS by
+        # default. That block happens on the request thread, so the HTTP checkout response would
+        # hang for a minute before the publish failure is logged. 2 s makes the publish fail fast,
+        # so the caller gets its 201 promptly and only the event is lost. Do not carry this value
+        # into a real deployment, where a brief metadata wait is legitimate.
+        max.block.ms: 2000
+
+  # Browse the in-memory schema at http://localhost:8082/h2-console
+  # (JDBC URL above, user `sa`, empty password). Local profile only.
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+# Defaulted to the port catalog-service listens on locally, so no environment setup is needed.
+# Still overridable by CATALOG_SERVICE_URL. If catalog-service is not running, add-to-basket fails
+# on the cross-service read (after the inherited bounded retry) rather than at startup.
+catalog:
+  service:
+    url: ${CATALOG_SERVICE_URL:http://localhost:8081}
+
+logging:
+  level:
+    # BROKER-FREE RUN, CONSOLE NOISE ONLY. The publisher stays fully wired and is NOT disabled: it
+    # still attempts every send and still logs a genuine publish failure at ERROR. With no broker
+    # listening, though, the producer's network layer retries the bootstrap connection about once a
+    # second and each round trip emits three lines - "Node -1 disconnected" at INFO plus
+    # "Connection to node -1 ... could not be established" and "Bootstrap broker ... disconnected"
+    # at WARN - which buries every application log line during a demo. Both loggers are muted to
+    # ERROR so real client errors still surface. Same treatment as the consumer side in
+    # notification-service. Local profile only: application.yml is untouched and the default profile
+    # keeps stock Kafka client logging.
+    org.apache.kafka.clients.NetworkClient: ERROR
+    org.apache.kafka.clients.producer.internals: ERROR

@@ -1,0 +1,40 @@
+# api-gateway - CPU-driven horizontal autoscaling for the single client entry point
+# (capstone brief section 7 "Deployment, scaling, and service discovery should be handled
+# through Kubernetes", section 9 "scalability readiness").
+#
+# Safe to scale: the gateway is stateless. It holds a route table only - no session state,
+# no local disk, no database, no broker connection. Any replica can serve any request, and
+# the NodePort Service load-balances across the ready endpoints.
+#
+# Scaling on CPU utilization requires a CPU request on the pod, because utilization is
+# measured as a percentage of the request. api-gateway/deployment.yaml declares
+# requests.cpu: 150m, so averageUtilization 70 means roughly 105m of sustained CPU per pod
+# before a scale-up.
+#
+# Requires metrics-server in the cluster. Without it the HPA reports <unknown> for CPU and
+# never scales - see k8s/README.md.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api-gateway
+  namespace: cake-delight
+  labels:
+    app.kubernetes.io/name: api-gateway
+    app.kubernetes.io/component: gateway
+    app.kubernetes.io/part-of: cake-delight
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api-gateway
+  minReplicas: 1
+  # Modest ceiling on purpose: this is a single-node capstone demo cluster, not production.
+  # Every replica requests 150m CPU and 256Mi, so 3 pods stay within a small local node.
+  maxReplicas: 3
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

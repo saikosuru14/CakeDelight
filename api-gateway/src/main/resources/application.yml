@@ -1,0 +1,232 @@
+# Cake Delight - API Gateway
+# The only client entry point. Route table only: no business logic, no database.
+# Every downstream URI comes from an environment variable. No hostnames baked in here.
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      # Bounds every proxied call so a hung downstream cannot hold a gateway connection open
+      # indefinitely. connect-timeout is milliseconds; response-timeout is a Duration. Exceeding
+      # either surfaces as a ConnectException or TimeoutException, which GlobalErrorHandler maps to
+      # 503 SERVICE_UNAVAILABLE naming the target service (Requirement 9.4). The response timeout is
+      # the looser of the two because a downstream still answering slowly is worth waiting for.
+      httpclient:
+        connect-timeout: 5000
+        response-timeout: 10s
+      # Route order is significant. The rating route is declared (and ordered) ahead of the
+      # broader /api/cakes/** catalog route so the more specific path wins (Requirement 9.2).
+      # Paths are forwarded unchanged: no StripPrefix filter anywhere in this table.
+      #
+      # ------------------------------------------------- Retry: GET only, and that is the point
+      # Every route carries the same Retry filter, and every one restricts it to `methods: GET`.
+      # The gateway cannot know whether a downstream actually processed a request before the
+      # failure, so retrying a non-idempotent method risks doing the work twice: a retried
+      # POST /api/orders could create two orders for one checkout, a retried
+      # POST /api/baskets/{id}/items could add the same cake twice, and a retried DELETE could
+      # remove an item a later request re-added. A GET changes no state, so replaying it is safe
+      # and at worst wasted work. Omitting `methods` would default to GET plus POST - the unsafe
+      # default is exactly what these blocks exist to override.
+      #
+      # `series: SERVER_ERROR` limits retries to 5xx: a 4xx is the downstream giving a definite
+      # answer about the request itself, and repeating it changes nothing. 2 retries (3 attempts)
+      # with a 50 ms -> 100 ms backoff keeps worst-case added latency around 150 ms, well inside
+      # the 10 s response-timeout above. There is no circuit breaker: failure isolation is out of
+      # scope for this increment.
+      routes:
+        - id: rating-service-ratings
+          uri: ${RATING_SERVICE_URL}
+          order: 0
+          predicates:
+            - Path=/api/cakes/*/ratings/**
+          filters:
+            # GET reads the average rating and is safe to replay. The rating submission on this
+            # same path is a POST and is deliberately excluded: a retry would record two ratings.
+            - name: Retry
+              args:
+                retries: 2
+                series: SERVER_ERROR
+                methods: GET
+                backoff:
+                  firstBackoff: 50ms
+                  maxBackoff: 100ms
+                  factor: 2
+                  basedOnPreviousValue: false
+        - id: catalog-service-cakes
+          uri: ${CATALOG_SERVICE_URL}
+          order: 1
+          predicates:
+            - Path=/api/cakes/**
+          filters:
+            # The catalog is read-only through the gateway, so in practice every request here is
+            # already a GET; the restriction is stated anyway so adding a write endpoint later
+            # cannot silently inherit retries.
+            - name: Retry
+              args:
+                retries: 2
+                series: SERVER_ERROR
+                methods: GET
+                backoff:
+                  firstBackoff: 50ms
+                  maxBackoff: 100ms
+                  factor: 2
+                  basedOnPreviousValue: false
+        - id: order-service-baskets-orders
+          uri: ${ORDER_SERVICE_URL}
+          order: 2
+          predicates:
+            - Path=/api/baskets/**,/api/orders/**
+          filters:
+            # The route that makes the GET-only rule matter most. Basket reads and order lookups
+            # are retried; checkout (POST /api/orders), basket add (POST), quantity update (PUT)
+            # and item removal (DELETE) are never retried, because duplicating any of them would
+            # corrupt the customer's basket or their order history.
+            - name: Retry
+              args:
+                retries: 2
+                series: SERVER_ERROR
+                methods: GET
+                backoff:
+                  firstBackoff: 50ms
+                  maxBackoff: 100ms
+                  factor: 2
+                  basedOnPreviousValue: false
+        - id: notification-service-notifications
+          uri: ${NOTIFICATION_SERVICE_URL}
+          order: 3
+          predicates:
+            - Path=/api/notifications/**
+          filters:
+            # Notification lookup is a read; the service accepts no writes over HTTP at all.
+            - name: Retry
+              args:
+                retries: 2
+                series: SERVER_ERROR
+                methods: GET
+                backoff:
+                  firstBackoff: 50ms
+                  maxBackoff: 100ms
+                  factor: 2
+                  basedOnPreviousValue: false
+
+      # ---------------------------------------------------------------- CORS
+      # Without a matching entry here, EVERY browser write fails. Spring Cloud Gateway's CORS
+      # processor runs ahead of routing, so any request carrying an `Origin` header that this
+      # configuration does not allow is rejected with 403 and an empty body before it ever
+      # reaches a route. Browsers send `Origin` on POST/PUT/DELETE even same-origin, but not on
+      # same-origin GET - which is exactly why reads looked healthy while add-to-basket,
+      # checkout, and rating submission were all unusable. The previous version of this block
+      # allowed ports 3000 and 30300 only; the UI is actually served on 8090, so its writes were
+      # dropped. Proven by an otherwise identical pair of curl calls: with
+      # `Origin: http://localhost:8090` -> 403, content-length 0; without the header -> 201.
+      #
+      # Configuration, not a CorsWebFilter bean, and not stripping Origin at the proxy:
+      #   - Stripping `Origin` in nginx.conf / dev-server.js would only paper over the proxied
+      #     case. Under Kubernetes the UI is its own Service and this gateway is a separate
+      #     NodePort (30080), so the browser genuinely IS cross-origin there; the gateway has to
+      #     handle CORS properly regardless of what any proxy in front of it does.
+      #   - The capstone brief requires a browser client, so accepting browser writes is a real
+      #     functional requirement of the gateway, not a local dev workaround. It belongs in the
+      #     route configuration next to the routes it governs, where it is reviewable as config
+      #     and overridable per environment, rather than hidden in Java.
+      #
+      # Origins the UI is actually served from:
+      #   - Docker Compose publishes the UI on http://localhost:8090 and this gateway on 8080.
+      #   - Kubernetes exposes the gateway on NodePort 30080; the UI has no manifest yet, so its
+      #     eventual NodePort is unknown.
+      # `http://localhost:*` covers all of them - any localhost port, present or future - which
+      # is what the local demo needs without a list that goes stale every time a port moves.
+      #
+      # !!! SECURITY NOTE !!!
+      # `http://localhost:*` is DELIBERATELY PERMISSIVE because this is a local capstone demo:
+      # every origin it admits is a page already running on the developer's own machine. For any
+      # real deployment it MUST be narrowed to the exact UI origin (scheme, host, and port), and
+      # CORS_ALLOWED_ORIGIN_PATTERNS is the knob for doing that without rebuilding the image.
+      globalcors:
+        # Preflight OPTIONS requests do not always reach a route predicate, so register the CORS
+        # configuration on the gateway's own handler mapping too.
+        add-to-simple-url-handler-mapping: true
+        cors-configurations:
+          # '[/**]' rather than '[/api/**]': the bracket quoting stops YAML treating the path as a
+          # nested key, and the broader pattern means /actuator and /v3/api-docs answer a browser
+          # the same way /api does, so nothing new breaks the next time a path is added.
+          '[/**]':
+            # allowed-origin-patterns, NOT allowed-origins: `allowed-origins` demands exact
+            # literal origins, so a wildcard port cannot be expressed there at all. Patterns also
+            # keep the door open for a configurable set per environment.
+            #
+            # Bound as ONE comma-separated scalar, following this file's convention that every
+            # externally variable value comes from an environment variable. Spring Boot's relaxed
+            # binding splits a comma-separated string into the underlying List<String>, so the
+            # single-variable form binds cleanly and a YAML list is not needed; a YAML list would
+            # have forced an indexed CORS_..._0 / _1 style override instead.
+            allowed-origin-patterns: "${CORS_ALLOWED_ORIGIN_PATTERNS:http://localhost:*}"
+            # Exactly the verbs the API exposes (see docs/api.md): reads, basket add, quantity
+            # update, item removal, checkout, order confirmation, rating submission. There is no
+            # PATCH anywhere in the API. OPTIONS is here for the preflight itself.
+            allowed-methods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - OPTIONS
+            # Content-Type because the UI posts `application/json`; X-Request-Id because it is the
+            # project's correlation header, honoured by every service's RequestLoggingFilter, and
+            # a preflight rejects any header not listed here. No Authorization: this increment has
+            # no authentication.
+            allowed-headers:
+              - Content-Type
+              - X-Request-Id
+            # Response headers are hidden from JavaScript unless exposed, so a browser client
+            # could not read the correlation id off a response without this.
+            exposed-headers:
+              - X-Request-Id
+            # Cache the preflight for an hour so a write does not cost two round trips every time.
+            max-age: 3600
+            # allow-credentials is deliberately ABSENT (defaults to false). There is no
+            # authentication and no cookie in this increment, so no credential is needed - and
+            # combining credentials with wildcard origin patterns is precisely the
+            # misconfiguration to avoid, since it would let any localhost page act as the user.
+            # Revisit this whole block the moment authentication is introduced.
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # health,info for probes and build identity; metrics,prometheus for basic monitoring.
+        # `prometheus` is contributed by micrometer-registry-prometheus and serves the scrape
+        # payload at /actuator/prometheus. No Prometheus server or dashboard stack is deployed -
+        # the endpoint is exposed so a scraper can be pointed at it.
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true
+      group:
+        liveness:
+          include: livenessState
+        readiness:
+          include: readinessState
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+logging:
+  pattern:
+    level: "%5p [${spring.application.name:},requestId=%X{requestId:-}]"
+  level:
+    root: INFO
+    com.cakedelight.gateway: INFO
+    org.springframework.cloud.gateway: INFO

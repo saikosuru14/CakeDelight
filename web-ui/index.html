@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cake Delight</title>
+  <meta name="description" content="Cake Delight storefront: browse and filter cakes, manage a basket, check out, and rate a cake." />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <a class="skip-link" href="#catalog">Skip to catalogue</a>
+
+  <header class="site-header">
+    <div class="brand">
+      <span class="brand-mark" role="img" aria-label="Cake Delight logo">&#127856;</span>
+      <div>
+        <h1>Cake Delight</h1>
+        <p class="tagline">Freshly baked, delivered to your door</p>
+      </div>
+    </div>
+
+    <div class="customer-box">
+      <label for="customerId">Customer ID</label>
+      <input id="customerId" name="customerId" type="text" value="cust-001" autocomplete="off"
+             aria-describedby="customerIdHelp" />
+      <p id="customerIdHelp" class="hint">Used for the basket, checkout, and ratings. Saved in this browser.</p>
+    </div>
+  </header>
+
+  <!-- Feedback banners. Both are polite live regions so a screen reader announces them
+       without interrupting, and both are dismissible with a real button. -->
+  <div class="banners" aria-live="polite">
+    <div id="errorBanner" class="banner banner-error" role="alert" hidden>
+      <span class="banner-icon" aria-hidden="true">&#9888;</span>
+      <p class="banner-text"><strong id="errorCode"></strong> <span id="errorMessage"></span></p>
+      <button type="button" class="banner-close" data-dismiss="errorBanner" aria-label="Dismiss error message">&times;</button>
+    </div>
+    <div id="successBanner" class="banner banner-success" role="status" hidden>
+      <span class="banner-icon" aria-hidden="true">&#10003;</span>
+      <p class="banner-text" id="successMessage"></p>
+      <button type="button" class="banner-close" data-dismiss="successBanner" aria-label="Dismiss message">&times;</button>
+    </div>
+  </div>
+
+  <main class="layout">
+    <div class="main-column">
+      <section class="panel" aria-labelledby="filtersHeading">
+        <h2 id="filtersHeading">Find a cake</h2>
+        <form id="filterForm" class="filters" novalidate>
+          <div class="field">
+            <label for="filterName">Name contains</label>
+            <input id="filterName" name="name" type="search" placeholder="cheesecake" autocomplete="off" />
+          </div>
+          <div class="field">
+            <label for="filterCategory">Category</label>
+            <select id="filterCategory" name="category">
+              <option value="">All categories</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="filterMinPrice">Min price</label>
+            <input id="filterMinPrice" name="minPrice" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00" />
+          </div>
+          <div class="field">
+            <label for="filterMaxPrice">Max price</label>
+            <input id="filterMaxPrice" name="maxPrice" type="number" min="0" step="0.01" inputmode="decimal" placeholder="100.00" />
+          </div>
+          <div class="filter-actions">
+            <button type="submit" class="btn btn-primary">Apply filters</button>
+            <button type="reset" class="btn btn-quiet" id="resetFilters">Reset</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel" id="catalog" aria-labelledby="catalogHeading" aria-busy="false">
+        <div class="panel-head">
+          <h2 id="catalogHeading">Our cakes</h2>
+          <p class="result-count" id="resultCount">Loading&hellip;</p>
+        </div>
+        <ul class="cake-grid" id="cakeGrid"></ul>
+        <p class="empty-state" id="catalogEmpty" hidden>No cakes match those filters. Try widening the price range.</p>
+      </section>
+    </div>
+
+    <aside class="side-column" aria-label="Basket and checkout">
+      <section class="panel" aria-labelledby="basketHeading" id="basketPanel">
+        <div class="panel-head">
+          <h2 id="basketHeading">Your basket</h2>
+          <button type="button" class="btn btn-quiet btn-small" id="refreshBasket">Refresh</button>
+        </div>
+        <div id="basketBody">
+          <p class="empty-state" id="basketEmpty">Your basket is empty.</p>
+        </div>
+        <p class="basket-total" id="basketTotalRow" hidden>
+          <span>Basket total</span>
+          <strong id="basketTotal">0.00</strong>
+        </p>
+      </section>
+
+      <section class="panel" aria-labelledby="checkoutHeading">
+        <h2 id="checkoutHeading">Checkout</h2>
+        <form id="checkoutForm" class="stack" novalidate>
+          <div class="field">
+            <label for="customerEmail">Confirmation email</label>
+            <input id="customerEmail" name="customerEmail" type="email" value="ada@example.com" autocomplete="email" />
+          </div>
+          <button type="submit" class="btn btn-primary btn-block">Place order</button>
+        </form>
+
+        <div id="orderResult" hidden>
+          <h3>Order placed</h3>
+          <dl class="detail-list">
+            <dt>Order ID</dt>
+            <dd id="orderId" class="mono"></dd>
+            <dt>Order total</dt>
+            <dd id="orderTotal"></dd>
+            <dt>Status</dt>
+            <dd><span class="pill pill-status" id="orderStatus"></span></dd>
+          </dl>
+          <button type="button" class="btn btn-secondary btn-block" id="loadNotifications">
+            View confirmation notification
+          </button>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="notificationsHeading" id="notificationsPanel" hidden>
+        <h2 id="notificationsHeading">Notification record</h2>
+        <p class="hint">Written by the Notification Service after it consumed the order event.</p>
+        <div id="notificationsBody"></div>
+      </section>
+    </aside>
+  </main>
+
+  <footer class="site-footer">
+    <p>Cake Delight &mdash; browser client. Every request goes through the API Gateway at <code>/api/</code>.</p>
+  </footer>
+
+  <template id="cakeCardTemplate">
+    <li class="cake-card">
+      <figure class="cake-figure">
+        <img class="cake-image" src="" alt="" loading="lazy" />
+      </figure>
+      <div class="cake-body">
+        <div class="cake-heading">
+          <h3 class="cake-name"></h3>
+          <p class="cake-price"></p>
+        </div>
+        <p class="cake-meta">
+          <span class="pill pill-category"></span>
+          <span class="pill pill-availability"></span>
+          <span class="rating" data-role="rating"></span>
+        </p>
+        <p class="cake-description"></p>
+        <div class="cake-actions">
+          <div class="field field-inline">
+            <label class="qty-label">Qty</label>
+            <input class="qty-input" type="number" min="1" step="1" value="1" inputmode="numeric" />
+          </div>
+          <button type="button" class="btn btn-primary btn-small" data-action="add">Add to basket</button>
+        </div>
+        <div class="cake-actions cake-rate">
+          <div class="field field-inline">
+            <label class="score-label">Rating</label>
+            <select class="score-input">
+              <option value="5">5 &ndash; excellent</option>
+              <option value="4">4 &ndash; good</option>
+              <option value="3">3 &ndash; average</option>
+              <option value="2">2 &ndash; poor</option>
+              <option value="1">1 &ndash; bad</option>
+            </select>
+          </div>
+          <button type="button" class="btn btn-secondary btn-small" data-action="rate">Submit rating</button>
+        </div>
+      </div>
+    </li>
+  </template>
+
+  <script src="app.js"></script>
+</body>
+</html>

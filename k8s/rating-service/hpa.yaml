@@ -1,0 +1,39 @@
+# rating-service - CPU-driven horizontal autoscaling
+# (capstone brief section 7 "Deployment, scaling, and service discovery should be handled
+# through Kubernetes", section 9 "scalability readiness").
+#
+# Safe to scale: the service is stateless. Ratings and the per-cake average are computed
+# from rating_db, not cached in the pod, so every replica returns the same answer. No
+# session state, no local disk.
+#
+# Scaling on CPU utilization requires a CPU request on the pod, because utilization is
+# measured as a percentage of the request. rating-service/deployment.yaml declares
+# requests.cpu: 200m, so averageUtilization 70 means roughly 140m of sustained CPU per pod
+# before a scale-up.
+#
+# Requires metrics-server in the cluster. Without it the HPA reports <unknown> for CPU and
+# never scales - see k8s/README.md.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: rating-service
+  namespace: cake-delight
+  labels:
+    app.kubernetes.io/name: rating-service
+    app.kubernetes.io/component: microservice
+    app.kubernetes.io/part-of: cake-delight
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: rating-service
+  minReplicas: 1
+  # Modest ceiling on purpose: this is a single-node capstone demo cluster, not production.
+  maxReplicas: 3
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

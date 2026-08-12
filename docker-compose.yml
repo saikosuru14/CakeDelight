@@ -1,0 +1,279 @@
+# Cake Delight - full local stack (Requirement 11.2)
+#
+# Starts the API Gateway, all four microservices, one PostgreSQL database per service
+# (Requirement 10.1), a single-node Kafka broker, and the static web UI.
+#
+# The API Gateway is the only service component with a published port (Requirement 9.1).
+# Ports 8081-8084 are reachable on the `cake-delight` bridge network only, so every client
+# request has to come through http://localhost:8080. The web UI publishes 8090 for the
+# browser and reaches the gateway over the internal network.
+#
+# All service configuration is injected through `environment:` blocks. Nothing is baked
+# into any image (Requirement 11.5).
+#
+# !!! LOCAL ONLY !!!
+# The database credentials below are throwaway values for a disposable local stack. They
+# are deliberately obvious placeholders and must never be reused anywhere else. In
+# Kubernetes these same variables come from a Secret instead.
+#
+# Usage (run these yourself; both are long-running):
+#   docker compose up --build
+#   docker compose down -v
+
+name: cake-delight
+
+x-postgres-env: &postgres-env
+  POSTGRES_USER: cakedelight
+  POSTGRES_PASSWORD: local-only-not-a-real-password
+
+x-datasource-env: &datasource-env
+  SPRING_DATASOURCE_USERNAME: cakedelight
+  SPRING_DATASOURCE_PASSWORD: local-only-not-a-real-password
+
+# Readiness gate for the application containers (Requirement 12.4). The runtime images are
+# eclipse-temurin JRE Alpine, so busybox `wget` is the HTTP client available in-image; no
+# curl and no Dockerfile change needed.
+x-service-healthcheck: &service-healthcheck
+  interval: 10s
+  timeout: 5s
+  retries: 15
+  start_period: 60s
+
+services:
+  # ---------------------------------------------------------------- message broker
+  kafka:
+    image: apache/kafka:3.7.1
+    container_name: cake-delight-kafka
+    environment:
+      # Single-node KRaft: this one process is both broker and controller.
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      CLUSTER_ID: cake-delight-local-kraft
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      # Topic auto-creation covers `order.completed` with 1 partition and replication
+      # factor 1, matching the topic the Order Service declares itself.
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_NUM_PARTITIONS: 1
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 30s
+    networks: [cake-delight]
+
+  # ---------------------------------------------------------------- databases
+  catalog-db:
+    image: postgres:16.4
+    container_name: cake-delight-catalog-db
+    environment:
+      <<: *postgres-env
+      POSTGRES_DB: catalog_db
+    volumes:
+      - catalog-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cakedelight -d catalog_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    networks: [cake-delight]
+
+  order-db:
+    image: postgres:16.4
+    container_name: cake-delight-order-db
+    environment:
+      <<: *postgres-env
+      POSTGRES_DB: order_db
+    volumes:
+      - order-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cakedelight -d order_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    networks: [cake-delight]
+
+  rating-db:
+    image: postgres:16.4
+    container_name: cake-delight-rating-db
+    environment:
+      <<: *postgres-env
+      POSTGRES_DB: rating_db
+    volumes:
+      - rating-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cakedelight -d rating_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    networks: [cake-delight]
+
+  notification-db:
+    image: postgres:16.4
+    container_name: cake-delight-notification-db
+    environment:
+      <<: *postgres-env
+      POSTGRES_DB: notification_db
+    volumes:
+      - notification-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cakedelight -d notification_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    networks: [cake-delight]
+
+  # ---------------------------------------------------------------- application services
+  catalog-service:
+    build:
+      context: ./catalog-service
+    image: cake-delight/catalog-service:1.0.0
+    container_name: cake-delight-catalog-service
+    environment:
+      <<: *datasource-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://catalog-db:5432/catalog_db
+    # No published port: reachable through the gateway only (Requirement 9.1).
+    expose: ["8081"]
+    depends_on:
+      catalog-db:
+        condition: service_healthy
+    healthcheck:
+      <<: *service-healthcheck
+      test: ["CMD-SHELL", "wget -q -T 3 -O /dev/null http://localhost:8081/actuator/health/readiness || exit 1"]
+    networks: [cake-delight]
+
+  rating-service:
+    build:
+      context: ./rating-service
+    image: cake-delight/rating-service:1.0.0
+    container_name: cake-delight-rating-service
+    environment:
+      <<: *datasource-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://rating-db:5432/rating_db
+    expose: ["8083"]
+    depends_on:
+      rating-db:
+        condition: service_healthy
+    healthcheck:
+      <<: *service-healthcheck
+      test: ["CMD-SHELL", "wget -q -T 3 -O /dev/null http://localhost:8083/actuator/health/readiness || exit 1"]
+    networks: [cake-delight]
+
+  order-service:
+    build:
+      context: ./order-service
+    image: cake-delight/order-service:1.0.0
+    container_name: cake-delight-order-service
+    environment:
+      <<: *datasource-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://order-db:5432/order_db
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      # Cross-service reads go through the owning service's REST API (Requirement 10.2).
+      CATALOG_SERVICE_URL: http://catalog-service:8081
+    expose: ["8082"]
+    depends_on:
+      order-db:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      catalog-service:
+        condition: service_healthy
+    healthcheck:
+      <<: *service-healthcheck
+      test: ["CMD-SHELL", "wget -q -T 3 -O /dev/null http://localhost:8082/actuator/health/readiness || exit 1"]
+    networks: [cake-delight]
+
+  notification-service:
+    build:
+      context: ./notification-service
+    image: cake-delight/notification-service:1.0.0
+    container_name: cake-delight-notification-service
+    environment:
+      <<: *datasource-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://notification-db:5432/notification_db
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    expose: ["8084"]
+    depends_on:
+      notification-db:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      <<: *service-healthcheck
+      test: ["CMD-SHELL", "wget -q -T 3 -O /dev/null http://localhost:8084/actuator/health/readiness || exit 1"]
+    networks: [cake-delight]
+
+  # ---------------------------------------------------------------- entry point
+  api-gateway:
+    build:
+      context: ./api-gateway
+    image: cake-delight/api-gateway:1.0.0
+    container_name: cake-delight-api-gateway
+    environment:
+      CATALOG_SERVICE_URL: http://catalog-service:8081
+      ORDER_SERVICE_URL: http://order-service:8082
+      RATING_SERVICE_URL: http://rating-service:8083
+      NOTIFICATION_SERVICE_URL: http://notification-service:8084
+    # The only service port published to the host (Requirement 9.1); the web UI on 8090
+    # serves static files and proxies to this gateway over the internal network.
+    ports:
+      - "8080:8080"
+    depends_on:
+      catalog-service:
+        condition: service_healthy
+      order-service:
+        condition: service_healthy
+      rating-service:
+        condition: service_healthy
+      notification-service:
+        condition: service_healthy
+    healthcheck:
+      # The gateway readiness group is state-only; it holds no database.
+      <<: *service-healthcheck
+      test: ["CMD-SHELL", "wget -q -T 3 -O /dev/null http://localhost:8080/actuator/health/readiness || exit 1"]
+      start_period: 30s
+    networks: [cake-delight]
+
+  # ---------------------------------------------------------------- browser client
+  web-ui:
+    build:
+      context: ./web-ui
+    image: cake-delight/web-ui:1.0.0
+    container_name: cake-delight-web-ui
+    # nginx serves the static client and reverse-proxies /api/ to the gateway by service
+    # name, so the browser talks to one origin only and no CORS configuration is needed.
+    ports:
+      - "8090:80"
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+    healthcheck:
+      # nginx:alpine ships busybox `wget`, the same HTTP client used by the service checks.
+      <<: *service-healthcheck
+      test: ["CMD-SHELL", "wget -q -T 3 -O /dev/null http://localhost:80/index.html || exit 1"]
+      start_period: 10s
+    networks: [cake-delight]
+
+networks:
+  cake-delight:
+    driver: bridge
+
+volumes:
+  catalog-db-data:
+  order-db-data:
+  rating-db-data:
+  notification-db-data:

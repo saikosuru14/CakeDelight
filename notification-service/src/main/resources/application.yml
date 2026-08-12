@@ -1,0 +1,94 @@
+# Cake Delight - Notification Service
+# All environment specific values come from environment variables. No credentials here.
+server:
+  port: 8084
+
+spring:
+  application:
+    name: notification-service
+
+  datasource:
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      # Flyway owns the schema; Hibernate never mutates it.
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    # Fail fast when pointed at a database owned by another service (Requirement 10.3).
+    baseline-on-migrate: false
+    validate-on-migrate: true
+
+  kafka:
+    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS}
+    consumer:
+      group-id: notification-service
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        # Only this service's own copy of the event record is deserializable.
+        spring.json.trusted.packages: com.cakedelight.notification.messaging
+        # The publisher sends no type headers, so the target type is declared here.
+        spring.json.use.type.headers: false
+        spring.json.value.default.type: com.cakedelight.notification.messaging.OrderCompletedEvent
+
+# Order confirmation delivery (Requirement 8.1).
+notification:
+  delivery:
+    # Bounded retry for a transient channel failure only, so a momentary delivery problem gets one
+    # more chance before the attempt is recorded FAILED. A permanent rejection - an event with no
+    # customerEmail - is never retried: no address means no delivery, now or later. The budget is tiny
+    # on purpose: retrying happens on the Kafka listener thread, so it is time the partition is not
+    # being drained.
+    retry:
+      max-attempts: 2
+      backoff-ms: 200
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # health,info for probes and build identity; metrics,prometheus for basic monitoring.
+        # `prometheus` is contributed by micrometer-registry-prometheus and serves the scrape
+        # payload at /actuator/prometheus. No Prometheus server or dashboard stack is deployed -
+        # the endpoint is exposed so a scraper can be pointed at it.
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+      group:
+        liveness:
+          include: livenessState
+        readiness:
+          include: readinessState,db
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+logging:
+  pattern:
+    level: "%5p [${spring.application.name:},requestId=%X{requestId:-}]"
+  level:
+    com.cakedelight.notification: INFO

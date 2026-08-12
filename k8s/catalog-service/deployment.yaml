@@ -1,0 +1,74 @@
+# catalog-service - port 8081, owns catalog_db (Requirements 11.3, 11.4, 11.5, 12.4).
+#
+# Configuration is injected wholly through envFrom: non-secret values from the ConfigMap,
+# credentials from the Secret. Nothing is baked into the image (Requirement 11.5).
+#
+# Probe groups come from application.yml: liveness = livenessState,
+# readiness = readinessState + db. Readiness therefore genuinely gates on database
+# connectivity, and the pod stays out of the Service endpoint list until Flyway has
+# finished migrating - hence the generous readiness initialDelaySeconds and
+# failureThreshold below.
+#
+# The image is built locally by docker compose and pushed to no registry, so
+# imagePullPolicy is IfNotPresent. Load it into the cluster first, e.g.
+#   minikube image load cake-delight/catalog-service:1.0.0
+# or, for kind:
+#   kind load docker-image cake-delight/catalog-service:1.0.0
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog-service
+  namespace: cake-delight
+  labels:
+    app.kubernetes.io/name: catalog-service
+    app.kubernetes.io/component: microservice
+    app.kubernetes.io/part-of: cake-delight
+    app.kubernetes.io/version: "1.0.0"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: catalog-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: catalog-service
+        app.kubernetes.io/component: microservice
+        app.kubernetes.io/part-of: cake-delight
+        app.kubernetes.io/version: "1.0.0"
+    spec:
+      containers:
+        - name: catalog-service
+          image: cake-delight/catalog-service:1.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8081
+          envFrom:
+            - configMapRef:
+                name: catalog-service-config
+            - secretRef:
+                name: catalog-service-credentials
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 12
+          resources:
+            requests:
+              cpu: 200m
+              memory: 384Mi
+            limits:
+              cpu: 1000m
+              memory: 768Mi

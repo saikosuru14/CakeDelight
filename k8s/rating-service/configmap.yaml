@@ -1,0 +1,17 @@
+# rating-service non-secret configuration (Requirement 11.5).
+# Safe to commit: a JDBC URL only. Credentials live in rating-service/secret.yaml.
+#
+# rating-db is the Service created by k8s/postgres/rating-db.yaml. Only rating-service
+# points here (Requirement 10.1). Variable names match the docker-compose environment
+# block exactly.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rating-service-config
+  namespace: cake-delight
+  labels:
+    app.kubernetes.io/name: rating-service
+    app.kubernetes.io/component: microservice
+    app.kubernetes.io/part-of: cake-delight
+data:
+  SPRING_DATASOURCE_URL: jdbc:postgresql://rating-db:5432/rating_db

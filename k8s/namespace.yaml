@@ -1,0 +1,9 @@
+# Namespace for every Cake Delight component.
+# Requirements: 11.3
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cake-delight
+  labels:
+    app.kubernetes.io/part-of: cake-delight
+    name: cake-delight

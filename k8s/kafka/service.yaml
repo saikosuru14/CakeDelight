@@ -1,0 +1,19 @@
+# Internal broker endpoint. ClusterIP only: the broker is never client-facing
+# (Requirement 9.1). Consumers set SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9092.
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka
+  namespace: cake-delight
+  labels:
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/component: message-broker
+    app.kubernetes.io/part-of: cake-delight
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: kafka
+  ports:
+    - name: broker
+      port: 9092
+      targetPort: broker

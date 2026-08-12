@@ -1,0 +1,24 @@
+# api-gateway non-secret configuration (Requirement 11.5).
+# The gateway is a route table and nothing else: no database, no broker, no credentials.
+# Every value here is an in-cluster Service address, so all of it is safe to commit.
+#
+# Each URL points at the ClusterIP Service of the owning component. The gateway forwards
+# /api/** paths unchanged; the route predicates themselves live in application.yml
+# (Requirement 9.2). Short names resolve within the cake-delight namespace.
+#
+# Variable names match the docker-compose environment block exactly, so the same image
+# runs in both places with no rebuild.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-gateway-config
+  namespace: cake-delight
+  labels:
+    app.kubernetes.io/name: api-gateway
+    app.kubernetes.io/component: gateway
+    app.kubernetes.io/part-of: cake-delight
+data:
+  CATALOG_SERVICE_URL: http://catalog-service:8081
+  ORDER_SERVICE_URL: http://order-service:8082
+  RATING_SERVICE_URL: http://rating-service:8083
+  NOTIFICATION_SERVICE_URL: http://notification-service:8084

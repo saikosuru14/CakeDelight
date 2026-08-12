@@ -1,0 +1,29 @@
+# api-gateway - the ONLY externally reachable Service in Cake Delight (Requirement 9.1).
+#
+# NodePort rather than ClusterIP because this is the single client entry point and the
+# target is a local single-node cluster with no cloud load balancer or ingress controller
+# to depend on. The four microservices and all infrastructure stay ClusterIP, so 8081-8084,
+# 5432, and 9092 are never reachable from outside the cluster.
+#
+# Reach it at http://<node-ip>:30080/api/... , or on minikube:
+#   minikube service api-gateway -n cake-delight --url
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-gateway
+  namespace: cake-delight
+  labels:
+    app.kubernetes.io/name: api-gateway
+    app.kubernetes.io/component: gateway
+    app.kubernetes.io/part-of: cake-delight
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: api-gateway
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      # Fixed so the entry point URL is stable across re-applies. 30080 sits inside the
+      # default 30000-32767 NodePort range.
+      nodePort: 30080

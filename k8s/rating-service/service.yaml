@@ -1,0 +1,20 @@
+# rating-service internal endpoint (Requirement 11.3).
+# ClusterIP: reachable from the gateway only, never from outside the cluster
+# (Requirement 9.1). DNS for callers: rating-service:8083
+apiVersion: v1
+kind: Service
+metadata:
+  name: rating-service
+  namespace: cake-delight
+  labels:
+    app.kubernetes.io/name: rating-service
+    app.kubernetes.io/component: microservice
+    app.kubernetes.io/part-of: cake-delight
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: rating-service
+  ports:
+    - name: http
+      port: 8083
+      targetPort: http

@@ -1,0 +1,37 @@
+# Cake Delight - Catalog Service - `local` profile (H2 in-memory)
+#
+# Convenience profile for running the service without a PostgreSQL instance. PostgreSQL 16 stays
+# the canonical production target and the DEFAULT profile: application.yml is untouched and still
+# requires SPRING_DATASOURCE_* from the environment and still runs classpath:db/migration.
+#
+# This profile is never activated automatically. Activate it explicitly:
+#   mvn spring-boot:run -Dspring-boot.run.profiles=local
+#   SPRING_PROFILES_ACTIVE=local java -jar target/catalog-service-1.0.0.jar
+#
+# Profile files merge over application.yml, so only the H2 deltas live here. Server port, JPA,
+# actuator, springdoc and logging are all inherited unchanged.
+spring:
+  datasource:
+    # DB_CLOSE_DELAY=-1          -> keep the in-memory database (and the migrated schema) alive
+    #                               for the life of the JVM, not just the first connection
+    # MODE=PostgreSQL            -> PostgreSQL dialect compatibility
+    # DATABASE_TO_LOWER=TRUE     -> unquoted identifiers fold to lower case, as PostgreSQL does
+    # DEFAULT_NULL_ORDERING=HIGH -> NULLs sort last on ASC, matching PostgreSQL
+    url: jdbc:h2:mem:catalog_db;DB_CLOSE_DELAY=-1;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH
+    driver-class-name: org.h2.Driver
+    # `sa` with a blank password is the H2 default for an ephemeral in-memory database that lives
+    # and dies with the JVM. These are not secrets and guard nothing, so inlining them does not
+    # breach the no-credentials-in-config rule. Real credentials still come from the environment.
+    username: sa
+    password: ""
+
+  flyway:
+    # H2-compatible translations of db/migration; see the divergence notes in those files.
+    locations: classpath:db/h2
+
+  # Browse the in-memory schema at http://localhost:8081/h2-console
+  # (JDBC URL above, user `sa`, empty password). Local profile only.
+  h2:
+    console:
+      enabled: true
+      path: /h2-console

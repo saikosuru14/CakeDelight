@@ -1,0 +1,630 @@
+{
+  "info": {
+    "_postman_id": "f4c8e1b6-2d73-4a95-8f10-6c2b9de5a730",
+    "name": "Cake Delight",
+    "description": "End-to-end demo of the Cake Delight capstone. Every request goes through the API Gateway on {{baseUrl}}; the four service ports (8081-8084) are not published.\n\nRun the folders top to bottom and they perform the whole customer journey: check health, browse and filter the catalog, build a basket, check out, watch the order.completed event surface as a notification record, rate the cake, then walk the interesting failure paths.\n\nOnly one script exists in the collection: Checkout > Create order captures the generated orderId into the environment so the requests after it have something to read. Everything else is plain requests.\n\nImport Cake-Delight-Local.postman_environment.json alongside this collection and select it before running.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Health",
+      "description": "Confirms the stack is up before any business request runs. Compose gates each service on the readiness probe of its dependencies, so a healthy gateway means Flyway has migrated and Kafka is reachable.",
+      "item": [
+        {
+          "name": "Gateway health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/actuator/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["actuator", "health"]
+            },
+            "description": "Aggregate health of the gateway. show-details is always on here, so the response names the individual contributors. Expect 200 with status UP once the stack has finished starting; a connection refused here means nothing else in the collection will work."
+          },
+          "response": []
+        },
+        {
+          "name": "Gateway readiness",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/actuator/health/readiness",
+              "host": ["{{baseUrl}}"],
+              "path": ["actuator", "health", "readiness"]
+            },
+            "description": "The readiness probe group Kubernetes and Compose poll. The gateway carries no database, so this group is state-only; the four services add a db contributor to theirs. Expect 200 with status UP."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "2. Browse Catalog",
+      "description": "Requirement 1: a customer can see what is for sale. Served by the Catalog Service via the /api/cakes/** gateway route.",
+      "item": [
+        {
+          "name": "List all cakes",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/cakes",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "cakes"]
+            },
+            "description": "Unfiltered listing. With no page or size supplied the service resolves them to 0 and 20, so all 10 seeded cakes come back in one page. Expect 200 and totalElements 10 against a fresh stack. Note the response is a page envelope (content, page, size, totalElements), not a bare array."
+          },
+          "response": []
+        },
+        {
+          "name": "Get cake by id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/cakes/{{cakeId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "cakes", "{{cakeId}}"]
+            },
+            "description": "Single cake read for the seeded Chocolate Truffle. This is also the call the Order Service makes internally on every basket add, which is where the basket line's cakeName and unitPrice snapshot comes from. Expect 200 with price 23.75 and available true."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "3. Filter Catalog",
+      "description": "Requirement 2: filters narrow the listing. Every supplied filter is ANDed, name is a case-insensitive substring, category is case-insensitive equality, and both price bounds are inclusive.",
+      "item": [
+        {
+          "name": "Filter by name",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/cakes?name=cheesecake",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "cakes"],
+              "query": [
+                { "key": "name", "value": "cheesecake" }
+              ]
+            },
+            "description": "Substring match, deliberately lower-case against seeded names in title case, to show the match is case-insensitive. Expect 200 with the two cheesecakes (New York and Basque Burnt). A name that matches nothing is still a 200 with an empty content array, never a 404."
+          },
+          "response": []
+        },
+        {
+          "name": "Filter by category",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/cakes?category=cupcake",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "cakes"],
+              "query": [
+                { "key": "category", "value": "cupcake" }
+              ]
+            },
+            "description": "Category is equality, not substring, and also case-insensitive. Expect 200 with the three seeded Cupcake rows, including the unavailable Lemon Drizzle: filtering does not hide unavailable cakes, it only reports available false on them."
+          },
+          "response": []
+        },
+        {
+          "name": "Filter by price range",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/cakes?minPrice=3.00&maxPrice=6.00",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "cakes"],
+              "query": [
+                { "key": "minPrice", "value": "3.00" },
+                { "key": "maxPrice", "value": "6.00" }
+              ]
+            },
+            "description": "Inclusive bounds on BigDecimal prices. Expect 200 with the cheaper end of the catalog: the three cupcakes at 3.25, 3.60 and 4.10 plus the Almond Croissant at 5.95. The 6.40 Pistachio Danish falls outside, which shows the upper bound is applied and not rounded."
+          },
+          "response": []
+        },
+        {
+          "name": "Combined filters",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/cakes?name=cupcake&category=cupcake&minPrice=3.00&maxPrice=4.00",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "cakes"],
+              "query": [
+                { "key": "name", "value": "cupcake" },
+                { "key": "category", "value": "cupcake" },
+                { "key": "minPrice", "value": "3.00" },
+                { "key": "maxPrice", "value": "4.00" }
+              ]
+            },
+            "description": "All four filters at once, ANDed into one query rather than applied in sequence. Expect 200 with the two cupcakes priced under 4.00 (Vanilla Bean 3.25 and Lemon Drizzle 3.60); Salted Caramel at 4.10 is excluded by the price bound even though it matches name and category."
+          },
+          "response": []
+        },
+        {
+          "name": "Paging",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/cakes?page=1&size=3",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "cakes"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "size", "value": "3" }
+              ]
+            },
+            "description": "Second page of three. Expect 200 with three items in content, page 1, size 3, and totalElements 10 counting the whole result set rather than the page. Out-of-range paging is clamped rather than rejected: page -1 resolves to 0 and size 0 resolves to 20, so neither returns a 400."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "4. Basket",
+      "description": "Requirement 3: basket management for {{customerId}}. Every write here first reads the cake from the Catalog Service, so this folder is also the cross-service call in action. Each response is the whole basket with a recalculated basketTotal, which always equals the sum of the line totals.\n\nRun the requests in order: the folder deliberately ends with the Chocolate Truffle still in the basket so Checkout has something to convert into an order.",
+      "item": [
+        {
+          "name": "Add item",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cakeId\": \"{{cakeId}}\",\n  \"quantity\": 2\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/baskets/{{customerId}}/items",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "baskets", "{{customerId}}", "items"]
+            },
+            "description": "First add for this customer, so a new basket line is inserted and the status is 201 Created. The Order Service reads GET /api/cakes/{{cakeId}} before writing anything and snapshots cakeName and unitPrice onto the line, which is why a later catalog price change cannot move an existing basket. Expect 201 with quantity 2, lineTotal 47.50 and basketTotal 47.50."
+          },
+          "response": []
+        },
+        {
+          "name": "Add same item again",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cakeId\": \"{{cakeId}}\",\n  \"quantity\": 2\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/baskets/{{customerId}}/items",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "baskets", "{{customerId}}", "items"]
+            },
+            "description": "Byte-for-byte the same request as the one above, sent a second time. The line already exists, so its quantity is incremented instead of a duplicate line being created, and the status drops from 201 to 200 OK. Compare the two status codes side by side in the Postman history: that difference is the whole point of this request. Expect 200 with quantity 4 and basketTotal 95.00. The unit price is not re-read from the catalog on an increment.\n\nIf you re-run the collection without tearing the stack down, this customer's basket already holds the line and the previous request will answer 200 as well."
+          },
+          "response": []
+        },
+        {
+          "name": "Add a second cake",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cakeId\": \"11111111-1111-4111-8111-000000000004\",\n  \"quantity\": 4\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/baskets/{{customerId}}/items",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "baskets", "{{customerId}}", "items"]
+            },
+            "description": "Adds the seeded Vanilla Bean Cupcake (3.25) as a second line so the basket holds a multi-line total, and so the remove request further down has something to delete without emptying the basket before checkout. Expect 201 with two items and basketTotal 108.00."
+          },
+          "response": []
+        },
+        {
+          "name": "View basket",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/baskets/{{customerId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "baskets", "{{customerId}}"]
+            },
+            "description": "Read-only view of the two lines built above, each with its snapshot name and price, its quantity, and its rounded lineTotal. Expect 200. This endpoint never 404s: an unknown customer is a 200 with an empty items array and basketTotal 0.00, because a basket is derived from stored lines rather than created as a resource."
+          },
+          "response": []
+        },
+        {
+          "name": "Update quantity",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quantity\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/baskets/{{customerId}}/items/{{cakeId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "baskets", "{{customerId}}", "items", "{{cakeId}}"]
+            },
+            "description": "Replaces the stored quantity rather than adding to it, which is the difference between this PUT and re-posting to /items. Takes the Chocolate Truffle line from 4 down to 1. Expect 200 with lineTotal 23.75 and basketTotal 36.75. Targeting a cake that is not in the basket returns 404 BASKET_ITEM_NOT_FOUND; quantity 0 or negative is a 400."
+          },
+          "response": []
+        },
+        {
+          "name": "Remove item",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/baskets/{{customerId}}/items/11111111-1111-4111-8111-000000000004",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "baskets", "{{customerId}}", "items", "11111111-1111-4111-8111-000000000004"]
+            },
+            "description": "Drops the Vanilla Bean Cupcake line and returns the recalculated basket, which is why this is a 200 with a body and not a 204. Expect 200 with one remaining item and basketTotal 23.75 - that figure becomes the order total at checkout. The Chocolate Truffle is left in place on purpose so the next folder has a non-empty basket."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "5. Checkout",
+      "description": "Requirement 4: turn the stored basket into an order. Checkout sends no item list, so a client cannot supply its own prices or quantities; the order is built from what the Order Service already holds. The order insert, the item copy and the basket clear happen in one transaction, and order.completed is published only after that transaction commits.",
+      "item": [
+        {
+          "name": "Create order (captures orderId)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"201 Created\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.environment.set(\"orderId\", pm.response.json().orderId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"customerEmail\": \"{{customerEmail}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/orders",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orders"]
+            },
+            "description": "The pivot of the whole demo. Expect 201 with orderId, orderTotal 23.75 carried over from basketTotal, and status CREATED - a narrower body than the order read, on purpose.\n\nThis is the only request in the collection with a script, and the only reason for it is chaining: it writes the generated orderId into the environment so the order read, the confirmation, and the notification lookup have something to address. Everything after this folder fails with an empty path segment if this request has not run."
+          },
+          "response": []
+        },
+        {
+          "name": "Get order by id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{orderId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orders", "{{orderId}}"]
+            },
+            "description": "Full order read using the captured id. Expect 200 with customerId, status CREATED, createdAt, orderTotal, and the items copied from the basket with their checkout-time names and prices. orderTotal is the committed column read as-is, never re-summed from the items. customerEmail is stored on the order but deliberately not exposed here, since this read is unauthenticated and only the event needs the address."
+          },
+          "response": []
+        },
+        {
+          "name": "Get basket again (now empty)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/baskets/{{customerId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "baskets", "{{customerId}}"]
+            },
+            "description": "The same basket read as in folder 4, repeated after checkout to show the basket was cleared in the same transaction that created the order. Expect 200 with an empty items array and basketTotal 0.00. Still a 200, not a 404 - an empty basket is a valid state, which is also why the empty-basket checkout in the Error Cases folder has to be rejected by the Order Service rather than by a missing resource."
+          },
+          "response": []
+        },
+        {
+          "name": "Confirm order",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{orderId}}/confirmation",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orders", "{{orderId}}", "confirmation"]
+            },
+            "description": "Moves the order CREATED -> CONFIRMED. Modelled as a POST to a sub-resource with no body, so the client never names a status and no other transition is reachable. Expect 200 with { orderId, status: CONFIRMED }. Send it twice: confirming an already-confirmed order answers 200 with CONFIRMED again rather than a conflict, which is the idempotency worth showing in a demo."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "6. Notification",
+      "description": "Requirement 5 and the asynchronous half of the architecture. Nothing in this folder writes: the record it reads exists only because the order.completed event crossed Kafka from the Order Service to the Notification Service.",
+      "item": [
+        {
+          "name": "Get notification records for the order",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications/orders/{{orderId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "notifications", "orders", "{{orderId}}"]
+            },
+            "description": "The proof that the event was published, consumed, and acted on. Expect 200 with one record: channel EMAIL, status SENT, and an attemptedAt just after the checkout. That row is written by the order.completed listener and by nothing else - this service exposes no write endpoint.\n\nDelivery is asynchronous, so on a cold stack the first call can return an empty array; wait a moment and re-send. An empty array is a 200, never a 404.\n\nA list rather than a single record, because FAILED attempts accumulate for one order while at most one SENT record can exist. Redelivering the same event does not add a second confirmation: the listener skips an order that already has a SENT record, and on PostgreSQL a partial unique index enforces that at the database level.\n\nThe delivery channel is a stub that logs the composed confirmation, so the message body itself shows up in the service log: docker compose logs notification-service."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "7. Ratings",
+      "description": "Requirement 6, served by the Rating Service. These paths hang off /api/cakes/{cakeId}/ratings, which the gateway sends to the Rating Service because the /api/cakes/*/ratings/** route is ordered ahead of the broader /api/cakes/** catalog route. Getting a rating response here rather than a cake is what demonstrates that route precedence.\n\nThe Rating Service does not check cakeId against the catalog; a rating can be stored against any well-formed UUID.",
+      "item": [
+        {
+          "name": "Submit rating",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"score\": 5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/cakes/{{cakeId}}/ratings",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "cakes", "{{cakeId}}", "ratings"]
+            },
+            "description": "Rates the cake that was just ordered. The client sends only customerId and score; the rating id and createdAt are generated by the service. Expect 201 with the stored record echoed back. Nothing stops the same customer rating the same cake twice - each submission is its own row and both count towards the average."
+          },
+          "response": []
+        },
+        {
+          "name": "List ratings for the cake",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/cakes/{{cakeId}}/ratings",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "cakes", "{{cakeId}}", "ratings"]
+            },
+            "description": "Every rating stored for the cake, as a bare array rather than a page envelope. Expect 200 containing the rating submitted above. A cake nobody has rated returns 200 with an empty array."
+          },
+          "response": []
+        },
+        {
+          "name": "Get average rating",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/cakes/{{cakeId}}/ratings/average",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "cakes", "{{cakeId}}", "ratings", "average"]
+            },
+            "description": "The aggregate a storefront would show next to the cake. Expect 200 with averageRating 5.0 and ratingCount 1 after a single 5-star submission; the mean is rounded to one decimal place HALF_UP. A cake with no ratings is a 200 with averageRating null and ratingCount 0, not a 404, so a client can render it without special-casing an error. This deeper path still matches the ratings route, so it too is served by the Rating Service."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "8. Error Cases",
+      "description": "Validation and error handling. Every component - the four services and the gateway - answers with the same four-field shape { code, message, timestamp, path }, so a client has one error contract to code against. Each request below trips a different code; read the code field, not just the status.",
+      "item": [
+        {
+          "name": "Unknown cake id -> 404 CAKE_NOT_FOUND",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/cakes/00000000-0000-4000-8000-000000000000",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "cakes", "00000000-0000-4000-8000-000000000000"]
+            },
+            "description": "A well-formed UUID that is not in the catalog. Expect 404 with code CAKE_NOT_FOUND and the identifier carried in the message. Contrast with the malformed-UUID request below: that one never reaches the service logic and comes back 400 instead."
+          },
+          "response": []
+        },
+        {
+          "name": "Inverted price range -> 400 INVALID_PRICE_RANGE",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/cakes?minPrice=50&maxPrice=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "cakes"],
+              "query": [
+                { "key": "minPrice", "value": "50" },
+                { "key": "maxPrice", "value": "10" }
+              ]
+            },
+            "description": "Both bounds are individually valid non-negative numbers, but together they describe an empty range. Rather than quietly returning zero results, the Catalog Service rejects it. Expect 400 with code INVALID_PRICE_RANGE and a message naming both parameters and their values. A negative or non-numeric price is a different failure and yields VALIDATION_ERROR."
+          },
+          "response": []
+        },
+        {
+          "name": "Add unavailable cake -> 409 CAKE_UNAVAILABLE",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cakeId\": \"{{unavailableCakeId}}\",\n  \"quantity\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/baskets/{{customerId}}/items",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "baskets", "{{customerId}}", "items"]
+            },
+            "description": "The seeded Lemon Drizzle Cupcake exists but has available false. Expect 409 with code CAKE_UNAVAILABLE. Two things this demonstrates: the Order Service checks availability during its catalog read and writes nothing before that read succeeds, so the basket is left untouched; and availability is treated as a definite answer, so this is never retried. Follow it with a basket read to confirm no line was added."
+          },
+          "response": []
+        },
+        {
+          "name": "Checkout with empty basket -> 400 BASKET_EMPTY",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"cust-demo-empty\",\n  \"customerEmail\": \"{{customerEmail}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/orders",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orders"]
+            },
+            "description": "Uses a customerId that never had a basket, so there is nothing to convert into an order. Expect 400 with code BASKET_EMPTY and no order created - re-running it produces the same 400 rather than a growing pile of empty orders. The customerId is hard-coded rather than taken from the environment so this stays a guaranteed empty basket no matter what else has run."
+          },
+          "response": []
+        },
+        {
+          "name": "Rating score out of range -> 400 VALIDATION_ERROR",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"score\": 6\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/cakes/{{cakeId}}/ratings",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "cakes", "{{cakeId}}", "ratings"]
+            },
+            "description": "Score 6 against a 1-5 scale. Expect 400 with code VALIDATION_ERROR and a message naming the score field, produced by bean validation before any service code runs, so nothing is stored and the average from folder 7 does not move."
+          },
+          "response": []
+        },
+        {
+          "name": "Malformed UUID in path -> 400 VALIDATION_ERROR",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/cakes/not-a-uuid",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "cakes", "not-a-uuid"]
+            },
+            "description": "A path segment that cannot be converted to a UUID, so the request fails at type conversion rather than at a lookup. Expect 400 with code VALIDATION_ERROR - not the 404 CAKE_NOT_FOUND the first request in this folder returns. The distinction matters to a client: 400 means fix the request, 404 means the request was fine but the thing does not exist."
+          },
+          "response": []
+        },
+        {
+          "name": "Unrouted path -> 404 ROUTE_NOT_FOUND",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/unknown",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "unknown"]
+            },
+            "description": "Matches none of the four gateway routes, so no service is ever contacted. Expect 404 with code ROUTE_NOT_FOUND, answered by the gateway itself. Worth showing because the gateway runs on WebFlux and cannot use controller advice: this body comes from a dedicated error handler, and it still matches the shape every service uses."
+          },
+          "response": []
+        },
+        {
+          "name": "Unknown order id -> 404 ORDER_NOT_FOUND",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/00000000-0000-4000-8000-000000000000",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orders", "00000000-0000-4000-8000-000000000000"]
+            },
+            "description": "A well-formed order UUID that was never issued. Expect 404 with code ORDER_NOT_FOUND. The confirmation endpoint answers the same way for an unknown id, so a stale orderId cannot be confirmed into existence."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

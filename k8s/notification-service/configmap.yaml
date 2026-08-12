@@ -1,0 +1,22 @@
+# notification-service non-secret configuration (Requirement 11.5).
+# Safe to commit: a JDBC URL and the broker bootstrap address. Credentials live in
+# notification-service/secret.yaml.
+#
+# notification-db is the Service created by k8s/postgres/notification-db.yaml, and only
+# notification-service points here (Requirement 10.1). kafka is the broker Service from
+# k8s/kafka/service.yaml; this service consumes order.completed in the
+# notification-service group, which is set in application.yml rather than here.
+#
+# Variable names match the docker-compose environment block exactly.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: notification-service-config
+  namespace: cake-delight
+  labels:
+    app.kubernetes.io/name: notification-service
+    app.kubernetes.io/component: microservice
+    app.kubernetes.io/part-of: cake-delight
+data:
+  SPRING_DATASOURCE_URL: jdbc:postgresql://notification-db:5432/notification_db
+  SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092

@@ -1,0 +1,65 @@
+# notification-service - CPU-driven horizontal autoscaling, with a hard caveat on what
+# scaling actually buys here
+# (capstone brief section 7 "Deployment, scaling, and service discovery should be handled
+# through Kubernetes", section 9 "scalability readiness").
+#
+# READ THIS BEFORE RAISING maxReplicas.
+#
+# This service is a Kafka consumer in group `notification-service` on topic
+# `order.completed`, which is created with ONE partition (order-service
+# KafkaTopicConfig: .partitions(1), and the broker default KAFKA_NUM_PARTITIONS=1).
+#
+# Kafka assigns each partition to at most one consumer within a consumer group. With one
+# partition and one group there is exactly one useful consumer. Scaling this Deployment to
+# N replicas therefore produces 1 pod that owns the partition and N-1 pods that own nothing
+# and consume nothing - they sit idle on the listener side while still costing CPU, memory,
+# and a database connection pool.
+#
+# So horizontal scaling here buys AVAILABILITY, not THROUGHPUT:
+#   * availability yes - if the active consumer pod dies, a replacement is already running
+#     and warmed up, and the group rebalances the partition onto it in seconds instead of
+#     waiting for a fresh pod to schedule, pull, and boot Spring. The HTTP side
+#     (/api/notifications/orders/{orderId}) also genuinely load-balances across replicas,
+#     since lookups read notification_db and are stateless.
+#   * throughput no - consumption stays single-threaded regardless of replica count.
+#     Raising consumption throughput requires more PARTITIONS on `order.completed` first
+#     (and then at most one consumer per partition), which is a topic-level change in
+#     order-service KafkaTopicConfig, not a Kubernetes change.
+#
+# maxReplicas is 3, matching the other components for a uniform scaling story, but read the
+# ceiling honestly: of 3 replicas exactly 1 owns the single partition and consumes events;
+# the other 2 serve the HTTP lookup endpoint and idle as consumers. Raising the ceiling
+# further only adds idle listeners.
+#
+# Scaling on CPU utilization requires a CPU request on the pod, because utilization is
+# measured as a percentage of the request. notification-service/deployment.yaml declares
+# requests.cpu: 200m, so averageUtilization 70 means roughly 140m of sustained CPU per pod
+# before a scale-up.
+#
+# Requires metrics-server in the cluster. Without it the HPA reports <unknown> for CPU and
+# never scales - see k8s/README.md.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: notification-service
+  namespace: cake-delight
+  labels:
+    app.kubernetes.io/name: notification-service
+    app.kubernetes.io/component: microservice
+    app.kubernetes.io/part-of: cake-delight
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: notification-service
+  minReplicas: 1
+  # One partition means at most one effective consumer, whatever this number says. The extra
+  # replicas add HTTP lookup capacity and a warm standby consumer. See the note above.
+  maxReplicas: 3
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

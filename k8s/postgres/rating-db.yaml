@@ -1,0 +1,107 @@
+# rating_db - owned exclusively by rating-service (Requirement 10.1).
+# Service DNS for consumers: rating-db.cake-delight.svc.cluster.local:5432
+#
+# No HorizontalPodAutoscaler for this component, by design. It is stateful and pinned to a
+# single replica: the PVC below is ReadWriteOnce, so the volume cannot be attached to a
+# second pod, and two Postgres processes over one data directory is corruption, not
+# capacity. Scaling a database horizontally means replication or sharding, which is a
+# different design, not a replica count change. HPAs exist only for the stateless services
+# and the gateway - see k8s/README.md.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rating-db-data
+  namespace: cake-delight
+  labels:
+    app.kubernetes.io/name: rating-db
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: cake-delight
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rating-db
+  namespace: cake-delight
+  labels:
+    app.kubernetes.io/name: rating-db
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: cake-delight
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: rating-db
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: rating-db
+        app.kubernetes.io/component: database
+        app.kubernetes.io/part-of: cake-delight
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16.4
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: rating_db
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          envFrom:
+            - secretRef:
+                name: rating-db-credentials
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "$(POSTGRES_USER)", "-d", "rating_db"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "$(POSTGRES_USER)", "-d", "rating_db"]
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: rating-db-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rating-db
+  namespace: cake-delight
+  labels:
+    app.kubernetes.io/name: rating-db
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: cake-delight
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: rating-db
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
