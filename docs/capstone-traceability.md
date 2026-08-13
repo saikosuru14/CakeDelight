@@ -106,7 +106,7 @@ runtime; multi-channel fan-out is deliberately out of scope.
 | API documentation for exposed endpoints | [`api.md`](api.md) — every endpoint, every field, every error code. Plus springdoc Swagger UI at `/swagger-ui.html` on each service | present |
 | Dockerfiles for each service | six, one per component, multi-stage where there is something to compile | present, unbuilt |
 | Kubernetes deployment and service configuration | `k8s/`, with [`k8s/README.md`](../k8s/README.md) for procedure and known gaps | present, unapplied |
-| Database schema / data model | Flyway migrations per service under `src/main/resources/db/migration` (PostgreSQL, source of truth); H2 equivalents under `db/h2` for the `local` profile | present, PostgreSQL DDL unexecuted |
+| Database schema / data model | [`data-model.md`](data-model.md) — all four schemas, every column, key, check, and index, plus why only one foreign key exists. Backed by the Flyway migrations under `src/main/resources/db/migration` (PostgreSQL, source of truth), with H2 mirrors under `db/h2` for the `local` profile | present, PostgreSQL DDL unexecuted |
 | Message/event contract | [`event-contract.md`](event-contract.md) — topic, key, serializers, payload, publish and consume semantics, and what is safe to change | present |
 | Setup and execution instructions | [`../README.md`](../README.md) — three paths, each labelled with whether it has actually been run | present |
 | Short demonstration of the end-to-end flow | [`DEMO.md`](DEMO.md) — written walkthrough with captured status codes, ids, and totals. Drivable live from the web UI or the Postman collection in `postman/` | present; no screen recording |
@@ -130,9 +130,12 @@ runtime; multi-channel fan-out is deliberately out of scope.
 Things a reviewer should know before grading:
 
 1. **No container or cluster has ever run this.** `docker compose up` and `kubectl apply` were never
-   executed. The Dockerfiles and manifests are hand-reviewed but schema-unvalidated: even
-   `kubectl create --dry-run=client` needs to reach an API server to resolve REST mappings, so there
-   was no offline way to check them.
+   executed. Docker Desktop starts but its engine never becomes usable — `wsl --status` reports the
+   Windows Subsystem for Linux is not installed and `wsl --install` requires administrator rights the
+   account does not have, so `docker info` hangs and times out. Every `.yaml` file in `k8s/` has been
+   parsed with SnakeYAML and loads cleanly, so structural errors are ruled out; schema-level errors
+   (a misspelled field, a wrong enum) are not, because even `kubectl create --dry-run=client` needs
+   to reach an API server to resolve REST mappings.
 2. **The verified run used H2, not PostgreSQL.** The PostgreSQL migrations under `db/migration` have
    never been applied by a live Flyway. One consequence is concrete: H2 cannot express the partial
    unique index `uq_notifications_order_sent`, so the second idempotency guard is PostgreSQL-only and

@@ -244,13 +244,20 @@ single-instance PostgreSQL pods.
 
 Honest list, since none of this has been executed:
 
-- **Nothing here has been validated by `kubectl`.** Not applied, and not schema-checked either.
-  `kubectl create --dry-run=client` was run against all 37 files and every one failed the same way —
-  `failed to download openapi: the server could not find the requested resource`, and with
-  `--validate=false`, `couldn't get current server API group list`. Even a client-side dry run pulls
-  the schema and resolves the REST mapping through the API server, so there is no offline path with
-  `kubectl` alone. Checking these files needs a reachable cluster or a standalone validator such as
-  `kubeconform`. Schema and field-name errors are therefore entirely possible.
+- **Parsed, but not schema-validated.** Every `.yaml` file here has been parsed with SnakeYAML (the
+  same parser Spring Boot uses) and all of them load cleanly, including the multi-document
+  `postgres/` files. So indentation, block structure, and duplicate keys are ruled out.
+  What is *not* ruled out is anything schema-level: a misspelled field, a wrong enum value, a field
+  on the wrong type. `kubectl create --dry-run=client` was tried against all 37 files and every one
+  failed identically — `failed to download openapi: the server could not find the requested
+  resource`, and with `--validate=false`, `couldn't get current server API group list`. Even a
+  client-side dry run pulls the schema and resolves the REST mapping through the API server, so there
+  is no offline path with `kubectl` alone. Closing this gap needs a reachable cluster or a standalone
+  validator such as `kubeconform`.
+- **Never applied.** No cluster has been reached from the build machine. The Docker engine cannot
+  start there: Docker Desktop runs, but `wsl --status` reports the Windows Subsystem for Linux is not
+  installed, and `wsl --install` needs administrator rights the account does not have. `docker info`
+  hangs and times out against the engine pipe. So no image was built and no manifest was applied.
 - **PVCs assume a default StorageClass.** The `postgres/` PVCs name no `storageClassName`, so they
   bind through whatever the cluster's default provisioner is. On a cluster with no default
   StorageClass they stay `Pending` and the database pods never start.

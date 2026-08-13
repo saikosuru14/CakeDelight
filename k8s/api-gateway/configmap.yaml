@@ -22,3 +22,42 @@ data:
   ORDER_SERVICE_URL: http://order-service:8082
   RATING_SERVICE_URL: http://rating-service:8083
   NOTIFICATION_SERVICE_URL: http://notification-service:8084
+
+  # ---------------------------------------------------------------- CORS
+  # Without this override every browser WRITE in the cluster fails with 403 and an empty
+  # body, while every read keeps working - the single most confusing failure mode this
+  # project has already hit once under Compose.
+  #
+  # Why the image default is not enough here. The gateway's application.yml defaults
+  # allowed-origin-patterns to `http://localhost:*`. In the cluster the browser opens the
+  # storefront at http://<node-ip>:30090, so nginx in the web-ui pod forwards an
+  # `Origin: http://<node-ip>:30090` header to this gateway (nginx passes Origin through
+  # untouched; only Host and the X-Forwarded-* headers are rewritten). A node IP such as
+  # 192.168.49.2 does not match `http://localhost:*`, so Spring Cloud Gateway's CORS
+  # processor rejects the request before routing.
+  #
+  # It bites writes only, and that is what makes it hard to spot: browsers send `Origin` on
+  # POST, PUT, and DELETE even when the request is same-origin, but not on a same-origin
+  # GET. So browse and filter look perfectly healthy while add-to-basket, checkout, and
+  # rating submission all fail.
+  #
+  # The four patterns, and why each is here:
+  #   http://localhost:*    `kubectl port-forward svc/web-ui 8090:80`, and `minikube service`
+  #                         when it opens a localhost tunnel rather than the node IP
+  #   http://127.0.0.1:*    same, for tools that resolve to the literal loopback address
+  #   http://*:30090        the web-ui NodePort reached by node IP - the normal cluster path
+  #   http://*:30080        this gateway's own NodePort, for a browser-based API client
+  #                         (Swagger UI, a REST console) hitting the API directly
+  #
+  # `*` in an allowed-origin-pattern is a wildcard over the whole origin string, so
+  # `http://*:30090` matches any host on that port. Bound as one comma-separated scalar
+  # because Spring Boot's relaxed binding splits it into the underlying List<String>.
+  #
+  # !!! SECURITY NOTE !!!
+  # `http://*:30090` admits that port on ANY host, which is deliberately permissive for a
+  # local single-node demo cluster and is NOT acceptable for a shared or public deployment.
+  # Narrow it to the exact origin there, e.g.
+  #   CORS_ALLOWED_ORIGIN_PATTERNS: https://shop.example.com
+  # Changing this value needs no image rebuild - restart the Deployment to pick it up, since
+  # envFrom values are read at container start.
+  CORS_ALLOWED_ORIGIN_PATTERNS: "http://localhost:*,http://127.0.0.1:*,http://*:30090,http://*:30080"

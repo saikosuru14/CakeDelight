@@ -134,11 +134,15 @@ spring:
       #     and overridable per environment, rather than hidden in Java.
       #
       # Origins the UI is actually served from:
-      #   - Docker Compose publishes the UI on http://localhost:8090 and this gateway on 8080.
-      #   - Kubernetes exposes the gateway on NodePort 30080; the UI has no manifest yet, so its
-      #     eventual NodePort is unknown.
-      # `http://localhost:*` covers all of them - any localhost port, present or future - which
-      # is what the local demo needs without a list that goes stale every time a port moves.
+      #   - Docker Compose publishes the UI on http://localhost:8090 and this gateway on 8080,
+      #     both covered by the default below.
+      #   - Kubernetes exposes the UI on NodePort 30090 and this gateway on 30080. Reached by
+      #     node IP, the browser origin is http://<node-ip>:30090, which the localhost default
+      #     does NOT match - so k8s/api-gateway/configmap.yaml overrides this variable with
+      #     patterns that include the two NodePorts. Without that override every write in the
+      #     cluster returns 403 while reads keep working.
+      # The default `http://localhost:*` covers any localhost port, present or future, which is
+      # what a local run needs without a list that goes stale every time a port moves.
       #
       # !!! SECURITY NOTE !!!
       # `http://localhost:*` is DELIBERATELY PERMISSIVE because this is a local capstone demo:

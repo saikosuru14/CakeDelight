@@ -24,6 +24,8 @@ Reference docs:
 - [`docs/event-contract.md`](docs/event-contract.md) — `order.completed` payload contract
 - [`docs/DEMO.md`](docs/DEMO.md) — end-to-end demonstration, with the status codes, order id, and
   totals actually captured on a live run
+- [`docs/data-model.md`](docs/data-model.md) — the four schemas, column by column, and why only one
+  foreign key exists in the whole system
 - [`docs/capstone-traceability.md`](docs/capstone-traceability.md) — every item in the capstone brief
   mapped to the code that satisfies it, and an honest list of what is unverified
 - [`k8s/README.md`](k8s/README.md) — apply procedure, secret handling, the scaling story, and known
@@ -980,6 +982,7 @@ cakeDelight/
 ├── docs/
 │   ├── api.md                  # endpoint reference
 │   ├── event-contract.md       # order.completed payload contract
+│   ├── data-model.md           # four schemas, keys, checks, indexes
 │   ├── DEMO.md                 # end-to-end demonstration with captured evidence
 │   └── capstone-traceability.md # brief item -> code, with verification status
 ├── docker-compose.yml
