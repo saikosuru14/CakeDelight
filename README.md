@@ -20,6 +20,8 @@ through it, and so does the [web UI](#web-ui).
 
 Reference docs:
 
+- [`docs/OVERVIEW.md`](docs/OVERVIEW.md) — **start here.** High-level overview: how the pieces fit
+  together, what each service does, the database tables, the tech stack, and the dependencies
 - [`docs/api.md`](docs/api.md) — endpoint reference for all four services plus the gateway route table
 - [`docs/event-contract.md`](docs/event-contract.md) — `order.completed` payload contract
 - [`docs/DEMO.md`](docs/DEMO.md) — end-to-end demonstration, with the status codes, order id, and
@@ -200,20 +202,28 @@ the jar, so it cannot be activated from `java -jar`.
 
 #### Prerequisites for this path
 
-| Requirement | Value on this machine |
+| Requirement | Notes |
 |---|---|
-| JDK 21, `JAVA_HOME` pointing at it | `C:\Program Files\Zulu\zulu-21` |
-| Maven — **not on `PATH` here** | `C:\Users\PenchalaSai.Kosuru\AppData\Local\apache-maven\apache-maven-3.9.9\bin\mvn.cmd` |
-| Node.js, for the UI dev server | v22 |
+| JDK 21, with `JAVA_HOME` pointing at it | any JDK 21 distribution |
+| Maven 3.9+ | on `PATH`, or invoked by full path if it is not |
+| Node.js 20+ | for the UI dev server |
 
 #### 1. Build all five
 
 Each service is an independent Maven project; there is no parent aggregator, so build them one at a
-time. Because `mvn` is not on `PATH`, invoke the binary by full path and pass `-f`:
+time. If `mvn` is on `PATH`, this is enough:
 
 ```powershell
-$env:JAVA_HOME = 'C:\Program Files\Zulu\zulu-21'
-$mvn = 'C:\Users\PenchalaSai.Kosuru\AppData\Local\apache-maven\apache-maven-3.9.9\bin\mvn.cmd'
+foreach ($s in 'catalog-service','rating-service','order-service','notification-service','api-gateway') {
+  mvn -B -f "$s\pom.xml" clean package
+}
+```
+
+If Maven is **not** on `PATH`, set the two variables once and invoke the binary by full path:
+
+```powershell
+$env:JAVA_HOME = '<path-to-jdk-21>'
+$mvn = '<path-to-maven>\bin\mvn.cmd'
 
 foreach ($s in 'catalog-service','rating-service','order-service','notification-service','api-gateway') {
   & $mvn -B -f "$s\pom.xml" clean package
@@ -980,6 +990,7 @@ cakeDelight/
 │   ├── web-ui/                 # deployment, service, configmap, hpa
 │   └── <component>/            # deployment, service, configmap, secret, hpa
 ├── docs/
+│   ├── OVERVIEW.md             # high-level guide - start here
 │   ├── api.md                  # endpoint reference
 │   ├── event-contract.md       # order.completed payload contract
 │   ├── data-model.md           # four schemas, keys, checks, indexes

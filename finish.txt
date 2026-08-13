@@ -1,0 +1,10 @@
+=== remove scratch ===
+added *.zip to .gitignore
+
+=== git status before commit ===
+ M .gitignore
+ M README.md
+ M kafka-run.cmd
+?? docs/OVERVIEW.md
+?? finish.ps1
+?? finish.txt

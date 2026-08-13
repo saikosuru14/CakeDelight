@@ -61,3 +61,6 @@ fixcommit.ps1
 fixcommit.txt
 gitstate.ps1
 gitstate.txt
+
+# Packaged archive for submission - build artifact, never committed.
+*.zip
