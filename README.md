@@ -163,6 +163,38 @@ Three paths, in order of intent:
 | [B — Local JVM processes](#path-b--local-jvm-processes-no-docker) | `java -jar`, H2 in-memory, local Kafka | **verified working**, full seven-step flow including Kafka |
 | [C — Kubernetes](#path-c--kubernetes) | manifests in `k8s/` | written, **never applied** |
 
+### Quick start — build and run everything with two commands
+
+Path B has seven components to start in the right order, so three scripts wrap it:
+
+```powershell
+.\build-all.ps1     # builds all five services, stops at the first failure
+.\run-all.ps1       # starts Kafka, the four services, the gateway and the UI
+.\stop-all.ps1      # stops everything it started
+```
+
+Then open **http://localhost:8090**.
+
+What they do for you, beyond saving typing:
+
+- **`build-all.ps1`** finds Maven even when it is not on `PATH` (or takes `-MavenPath`), checks the JDK
+  is 21, refuses to start while a service is running rather than failing halfway through `clean` — pass
+  `-StopRunning` to have it stop them — and reports each jar it produced. `-SkipTests` is available.
+- **`run-all.ps1`** starts the seven components in dependency order, each in its own window so the logs
+  stay separable, and **waits for each one to report ready** before starting the next. Readiness is the
+  actuator readiness group, which includes the database check, so it genuinely waits for Flyway rather
+  than for an open socket. Anything already listening is left alone, so it is safe to re-run to replace
+  a component that died. Finishes by calling the gateway and reporting the cake count. Flags:
+  `-SkipKafka`, `-SkipUi`, `-TimeoutSeconds`.
+- **`stop-all.ps1`** matches processes by command line, not by port, so it only ever stops processes
+  this project started. `-KeepKafka` leaves the broker up between rebuilds.
+
+Run `.\stop-all.ps1` before rebuilding. Windows will not delete a jar that is currently executing, so
+`mvn clean` fails with `Failed to delete ...jar` while a service is up.
+
+The manual step-by-step equivalent is [path B](#path-b--local-jvm-processes-no-docker) below, which is
+worth reading once to understand what the scripts are doing.
+
 ### Path A — Docker Compose
 
 ```bash
@@ -996,6 +1028,10 @@ cakeDelight/
 │   ├── data-model.md           # four schemas, keys, checks, indexes
 │   ├── DEMO.md                 # end-to-end demonstration with captured evidence
 │   └── capstone-traceability.md # brief item -> code, with verification status
+├── build-all.ps1               # build all five services
+├── run-all.ps1                 # start the whole stack, in order, waiting for readiness
+├── stop-all.ps1                # stop everything
+├── kafka-run.cmd               # local KRaft broker launcher
 ├── docker-compose.yml
 └── README.md
 ```

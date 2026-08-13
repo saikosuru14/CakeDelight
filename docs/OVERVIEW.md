@@ -335,6 +335,9 @@ Full instructions are in the [README](../README.md). In short, three paths:
 | Local JVM processes | `java -jar`, H2 in-memory, local Kafka | **verified working**, full journey |
 | Kubernetes | manifests in `k8s/` | written, **never applied** |
 
+For the local path, `build-all.ps1` then `run-all.ps1` at the repository root build all five services
+and start the whole stack in dependency order; `stop-all.ps1` shuts it down.
+
 Stated plainly: the container and cluster paths have not been run. No container runtime or Kubernetes
 cluster was available in the development environment, so no image was built and no manifest was
 applied. Every YAML file parses cleanly, but none has been schema-validated against the Kubernetes API.

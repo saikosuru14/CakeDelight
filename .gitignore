@@ -53,14 +53,6 @@ npm-debug.log*
 *.jks
 secrets.yaml
 
-# ---------------------------------------------------------------- agent scratch
-# Throwaway helper scripts and captured output used while setting the project up.
-gitcommit.ps1
-gitcommit.txt
-fixcommit.ps1
-fixcommit.txt
-gitstate.ps1
-gitstate.txt
-
-# Packaged archive for submission - build artifact, never committed.
+# ---------------------------------------------------------------- packaged archive
+# Build artifact produced for distribution; reproducible, so never committed.
 *.zip
