@@ -11,10 +11,9 @@ Status column:
 | **written** | Implemented and reviewed by hand, but never executed |
 | **n/a** | Out of scope by the brief itself |
 
-The single reason anything is *written* rather than *verified*: the Docker engine could not start on
-the build machine (WSL2 unavailable, installing it requires administrator rights the account does not
-have). Everything that needed a container runtime or a cluster is therefore unexecuted. Everything
-else was run as five JVM processes plus Kafka on one host.
+One constraint explains everything marked *written* rather than *verified*: no container runtime and no
+Kubernetes cluster were available in the development environment. Every deliverable that needed one is
+therefore unexecuted. Everything else was run as five JVM processes plus Kafka on a single host.
 
 ---
 
@@ -129,20 +128,18 @@ runtime; multi-channel fan-out is deliberately out of scope.
 
 Things a reviewer should know before grading:
 
-1. **No container or cluster has ever run this.** `docker compose up` and `kubectl apply` were never
-   executed. Docker Desktop starts but its engine never becomes usable — `wsl --status` reports the
-   Windows Subsystem for Linux is not installed and `wsl --install` requires administrator rights the
-   account does not have, so `docker info` hangs and times out. Every `.yaml` file in `k8s/` has been
-   parsed with SnakeYAML and loads cleanly, so structural errors are ruled out; schema-level errors
-   (a misspelled field, a wrong enum) are not, because even `kubectl create --dry-run=client` needs
-   to reach an API server to resolve REST mappings.
+1. **No container or cluster has run this.** `docker compose up` and `kubectl apply` were never
+   executed, because no container runtime or cluster was available. Every `.yaml` file in `k8s/` has
+   been parsed and loads cleanly, so structural errors are ruled out; schema-level errors such as a
+   misspelled field or a wrong enum value are not, because even `kubectl create --dry-run=client`
+   needs to reach an API server to resolve REST mappings.
 2. **The verified run used H2, not PostgreSQL.** The PostgreSQL migrations under `db/migration` have
    never been applied by a live Flyway. One consequence is concrete: H2 cannot express the partial
    unique index `uq_notifications_order_sent`, so the second idempotency guard is PostgreSQL-only and
    was not exercised.
-3. **Test coverage is thin by request.** Only `catalog-service` has tests — 2 classes, 32 assertions.
-   The brief lists no testing deliverable and the project owner explicitly excluded test work from
-   scope, so this is a deliberate omission rather than an oversight, but it is an omission.
+3. **Test coverage is thin.** Only `catalog-service` has tests — 2 classes, 32 assertions. The brief
+   lists no testing deliverable, so this was a conscious scope decision rather than an oversight, but
+   it is still a gap and is listed as one.
 4. **Notification delivery is a stub.** No SMTP server and no push provider is contacted; the channel
    logs and records `SENT`. Wiring a real provider is not in the brief's functional scope.
 5. **No authentication anywhere.** Every endpoint is open, and the order read deliberately omits

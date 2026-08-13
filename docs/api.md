@@ -1,7 +1,7 @@
 # Cake Delight API Reference
 
-Reference for every HTTP endpoint exposed by the implementation. Describes the code as built, not the
-design plan; divergences from `design.md` are listed at the end.
+Reference for every HTTP endpoint exposed by the implementation. It describes the code as built; the
+last section lists the places where the behaviour is easy to guess wrong.
 
 Clients talk to the API Gateway only (Requirement 9.1). Direct service ports are listed so the
 services can be exercised in isolation during development.
@@ -431,13 +431,15 @@ Exposed by all five components, not routed through the gateway.
 | `/swagger-ui.html` | Swagger UI |
 | `/v3/api-docs` | OpenAPI document |
 
-## Divergences from design.md
+## Behaviour worth knowing before integrating
 
-| Area | design.md | Implementation |
-|---|---|---|
-| Catalog `page` / `size` | Declared as request-param defaults 0 and 20 | Declared `required = false` with no default; `CakeService` resolves `null`, `page < 0`, and `size < 1` to 0 and 20. Out-of-range paging is silently clamped, not a `400` |
-| Basket add statuses | `201`, `200`, `400`, `404`, `409` | Also `503` `CATALOG_UNAVAILABLE` when the Catalog Service is unreachable |
-| Gateway error codes | `ROUTE_NOT_FOUND`, `SERVICE_UNAVAILABLE` | Adds `GATEWAY_ERROR` (500) as the fallback for any other routing failure |
-| Catalog client method | `getCake(UUID)` | `CatalogClient.fetchAvailableCake(UUID)` — the availability check is part of the fetch |
-| Route precedence | Relies on declaration order | Declaration order **and** explicit `order: 0..3` values |
-| `RatingRequest.customerId` | "`customerId` with `@NotNull`" | `@NotNull` as designed, which means a blank string passes validation |
+Six places where the implemented behaviour is easy to guess wrong from the endpoint tables alone.
+
+| Area | Behaviour |
+|---|---|
+| Catalog `page` / `size` | Declared `required = false` with no annotation default. `CakeService` resolves `null`, `page < 0`, and `size < 1` to 0 and 20, so out-of-range paging is clamped silently rather than rejected with a `400` |
+| Basket add statuses | Besides `201`, `200`, `400`, `404`, and `409`, a basket add can return `503` `CATALOG_UNAVAILABLE` when the Catalog Service cannot be reached |
+| Gateway error codes | `ROUTE_NOT_FOUND` and `SERVICE_UNAVAILABLE` cover the expected cases; `GATEWAY_ERROR` (500) is the fallback for any other routing failure, so a gateway error always carries one of the three |
+| Catalog client | `CatalogClient.fetchAvailableCake(UUID)` folds the availability check into the fetch, which is why a basket add cannot see an unavailable cake as a successful read |
+| Route precedence | Enforced by declaration order **and** explicit `order: 0..3` values, so the ratings route cannot be shadowed by the broader catalog route through a reordering |
+| `RatingRequest.customerId` | Annotated `@NotNull`, not `@NotBlank`, so an empty string is accepted |

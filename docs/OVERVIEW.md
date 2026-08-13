@@ -335,10 +335,9 @@ Full instructions are in the [README](../README.md). In short, three paths:
 | Local JVM processes | `java -jar`, H2 in-memory, local Kafka | **verified working**, full journey |
 | Kubernetes | manifests in `k8s/` | written, **never applied** |
 
-Stated plainly: the container and cluster paths have never been run. The build machine could not start
-a Docker engine — WSL2 is absent and installing it needs administrator rights that were unavailable —
-so no image was built and no manifest was applied. Every YAML file parses cleanly, but none has been
-schema-validated against the Kubernetes API.
+Stated plainly: the container and cluster paths have not been run. No container runtime or Kubernetes
+cluster was available in the development environment, so no image was built and no manifest was
+applied. Every YAML file parses cleanly, but none has been schema-validated against the Kubernetes API.
 
 The local JVM path *has* been run end to end, including Kafka, with the results captured in
 [`DEMO.md`](DEMO.md).

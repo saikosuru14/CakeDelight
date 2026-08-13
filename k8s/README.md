@@ -3,14 +3,13 @@
 Deployment configuration for every Cake Delight component. All resources are namespaced to
 `cake-delight`.
 
-> **These manifests have never been applied.** No cluster has been reached from the machine this
-> project was built on: the Docker engine could not start (WSL2 is unavailable and installing it
-> needs administrator rights the account does not have), so `kubectl apply` was never run and
-> `kubectl` never validated a single file here. Everything below is the intended procedure, not a
-> recorded one. Treat the YAML as reviewed-by-hand, not proven.
+> **Status: these manifests have not been applied to a cluster.** No Kubernetes cluster and no Docker
+> engine were available in the development environment, so `kubectl apply` was never run against them.
+> Everything below is the intended procedure rather than a recorded one, and the YAML should be treated
+> as reviewed but unproven.
 >
 > The path that *has* been run end to end is Path B in the [root README](../README.md#path-b--local-jvm-processes-no-docker):
-> five JVM processes, Kafka, and the UI on one host.
+> five JVM processes, Kafka, and the UI on a single host.
 
 ---
 
@@ -248,16 +247,13 @@ Honest list, since none of this has been executed:
   same parser Spring Boot uses) and all of them load cleanly, including the multi-document
   `postgres/` files. So indentation, block structure, and duplicate keys are ruled out.
   What is *not* ruled out is anything schema-level: a misspelled field, a wrong enum value, a field
-  on the wrong type. `kubectl create --dry-run=client` was tried against all 37 files and every one
-  failed identically — `failed to download openapi: the server could not find the requested
-  resource`, and with `--validate=false`, `couldn't get current server API group list`. Even a
-  client-side dry run pulls the schema and resolves the REST mapping through the API server, so there
-  is no offline path with `kubectl` alone. Closing this gap needs a reachable cluster or a standalone
-  validator such as `kubeconform`.
-- **Never applied.** No cluster has been reached from the build machine. The Docker engine cannot
-  start there: Docker Desktop runs, but `wsl --status` reports the Windows Subsystem for Linux is not
-  installed, and `wsl --install` needs administrator rights the account does not have. `docker info`
-  hangs and times out against the engine pipe. So no image was built and no manifest was applied.
+  on the wrong type. `kubectl create --dry-run=client` cannot close that gap without a cluster: even a
+  client-side dry run pulls the schema and resolves the REST mapping through the API server, and
+  against no cluster it fails with `failed to download openapi: the server could not find the
+  requested resource`. Schema checking needs a reachable cluster or a standalone validator such as
+  `kubeconform`.
+- **Not applied.** No cluster and no container runtime were available in the development environment,
+  so no image was built from the Dockerfiles and no manifest here was applied.
 - **PVCs assume a default StorageClass.** The `postgres/` PVCs name no `storageClassName`, so they
   bind through whatever the cluster's default provisioner is. On a cluster with no default
   StorageClass they stay `Pending` and the database pods never start.

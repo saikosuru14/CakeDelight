@@ -159,7 +159,7 @@ Three paths, in order of intent:
 
 | Path | What it uses | Status |
 |---|---|---|
-| [A — Docker Compose](#path-a--docker-compose) | containers, PostgreSQL 16, Kafka | supported path, **never executed on this machine** |
+| [A — Docker Compose](#path-a--docker-compose) | containers, PostgreSQL 16, Kafka | supported path, **not yet executed** |
 | [B — Local JVM processes](#path-b--local-jvm-processes-no-docker) | `java -jar`, H2 in-memory, local Kafka | **verified working**, full seven-step flow including Kafka |
 | [C — Kubernetes](#path-c--kubernetes) | manifests in `k8s/` | written, **never applied** |
 
@@ -185,10 +185,10 @@ Tear down, including the database volumes:
 docker compose down -v
 ```
 
-**This has never been executed on this machine.** The Docker engine cannot start here: WSL2 is not
-installed and enabling it needs administrator rights. `docker-compose.yml` is therefore unvalidated at
-runtime — it is written against the same images, ports, and environment variables documented elsewhere
-in this file, but nothing here confirms it starts.
+**Status: not yet executed.** No Docker engine was available in the environment this was developed in,
+so `docker-compose.yml` is unvalidated at runtime. It is written against the same images, ports, and
+environment variables documented elsewhere in this file, and it is consistent with them, but nothing
+here confirms the stack starts. Path B below is the one that has been run end to end.
 
 ### Path B — Local JVM processes, no Docker
 
@@ -1024,7 +1024,7 @@ its own copy of the event record; the contract between publisher and consumer is
 
 ## Troubleshooting
 
-**`mvn` is not recognised.** Maven is not on `PATH` — which is the case on this machine. Either add
+**`mvn` is not recognised.** Maven is not on `PATH`. Either add
 its `bin` directory to `PATH` and confirm with `mvn -v` that the reported Java version is 21, or
 invoke the binary by full path as shown in [path B, step 1](#1-build-all-five).
 

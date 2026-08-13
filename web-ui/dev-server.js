@@ -5,10 +5,9 @@
  * `nginx.conf` plus `Dockerfile` remain the real way the Web UI ships: as an nginx
  * container in `docker-compose.yml` and as a Deployment plus Service in `k8s/`.
  *
- * It exists only because the Docker engine cannot start on this machine (WSL2 is not
- * installed and enabling it needs admin rights), which leaves the nginx container
- * unavailable. This script replicates the two things nginx does, using nothing but Node
- * built-ins:
+ * It exists so the UI can be run when no Docker engine is available, which makes the
+ * nginx container unreachable. This script replicates the two things nginx does, using
+ * nothing but Node built-ins:
  *
  *   1. serve the static client from this directory
  *   2. reverse-proxy /api/ to the API Gateway with the path forwarded UNCHANGED

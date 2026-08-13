@@ -16,10 +16,10 @@ illustrative rather than captured it says so.
 | Client | `web-ui` served by `web-ui/dev-server.js` on `:8090`, proxying `/api/` to the gateway |
 | Entry point | API Gateway on `http://localhost:8080` — every call below goes through it |
 
-Docker Compose and Kubernetes were **not** used. The Docker engine could not start on the build
-machine (WSL2 unavailable, installing it needs administrator rights the account does not have), so
-`docker compose up` and `kubectl apply` have never run. The manifests and Dockerfiles are written and
-reviewed but unexecuted — see [`k8s/README.md`](../k8s/README.md).
+Docker Compose and Kubernetes were **not** used for this run. No container runtime or Kubernetes
+cluster was available in the development environment, so `docker compose up` and `kubectl apply` have
+not been executed. The manifests and Dockerfiles are written and reviewed but unexecuted — see
+[`k8s/README.md`](../k8s/README.md).
 
 That distinction matters for grading and it is stated plainly: the *application flow* is
 demonstrated, the *container and cluster packaging* is not.
@@ -93,12 +93,11 @@ Because the read happens first, every rejection leaves the basket untouched:
 | `11111111-1111-4111-8111-000000000006` (Lemon Drizzle Cupcake, `available: false`) | `409` `CAKE_UNAVAILABLE` |
 | `quantity: 0` or a missing `cakeId` | `400` `VALIDATION_ERROR` |
 
-The `409` case is worth calling out because it was originally **broken**: it returned `500`. Spring
-Retry routes *every* terminal failure through a `@Recover` method, and only `CatalogUnavailableException`
-had one, so non-retryable exceptions such as `CakeUnavailableException` were wrapped into
-`ExhaustedRetryException` and surfaced as `INTERNAL_ERROR`. Fixed by adding a
-`@Recover rethrowNonRetryable(RuntimeException, UUID)` in `CatalogClient`. It was found by running this
-step, which is the point of running it.
+The `409` case is worth calling out because it initially returned `500`. Spring Retry routes *every*
+terminal failure through a `@Recover` method, and only `CatalogUnavailableException` had one, so
+non-retryable exceptions such as `CakeUnavailableException` were wrapped into `ExhaustedRetryException`
+and surfaced as `INTERNAL_ERROR`. Resolved by adding a
+`@Recover rethrowNonRetryable(RuntimeException, UUID)` in `CatalogClient`.
 
 ### 4. View and adjust the basket
 

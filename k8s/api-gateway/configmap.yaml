@@ -25,8 +25,8 @@ data:
 
   # ---------------------------------------------------------------- CORS
   # Without this override every browser WRITE in the cluster fails with 403 and an empty
-  # body, while every read keeps working - the single most confusing failure mode this
-  # project has already hit once under Compose.
+  # body, while every read keeps working - an unusually confusing failure mode, and one this
+  # project has already run into once outside Kubernetes.
   #
   # Why the image default is not enough here. The gateway's application.yml defaults
   # allowed-origin-patterns to `http://localhost:*`. In the cluster the browser opens the

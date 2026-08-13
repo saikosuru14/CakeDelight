@@ -1,7 +1,7 @@
 # Single-node Kafka in KRaft mode (broker + controller in one process).
 # Bootstrap servers for clients: kafka.cake-delight.svc.cluster.local:9092
 # Topic `order.completed` is created on first use by auto-creation with the broker
-# defaults below: 1 partition, replication factor 1 (structure.md, design.md).
+# defaults below: 1 partition, replication factor 1. See docs/event-contract.md.
 #
 # Storage is an emptyDir on purpose: the log directory is scratch space for a
 # single-node demo broker, and a pod restart replays nothing. No PVC, no
