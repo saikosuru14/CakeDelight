@@ -245,11 +245,12 @@ single-instance PostgreSQL pods.
 Honest list, since none of this has been executed:
 
 - **Nothing here has been validated by `kubectl`.** Not applied, and not schema-checked either.
-  `kubectl create --dry-run=client --validate=false -f ...` was tried and it still fails with
-  `couldn't get current server API group list` — even a client-side dry run resolves the REST mapping
-  through the API server, so there is no offline path with `kubectl` alone. Validating these files
-  needs a reachable cluster, or a standalone schema checker such as `kubeconform`. Schema and
-  field-name errors are therefore entirely possible.
+  `kubectl create --dry-run=client` was run against all 37 files and every one failed the same way —
+  `failed to download openapi: the server could not find the requested resource`, and with
+  `--validate=false`, `couldn't get current server API group list`. Even a client-side dry run pulls
+  the schema and resolves the REST mapping through the API server, so there is no offline path with
+  `kubectl` alone. Checking these files needs a reachable cluster or a standalone validator such as
+  `kubeconform`. Schema and field-name errors are therefore entirely possible.
 - **PVCs assume a default StorageClass.** The `postgres/` PVCs name no `storageClassName`, so they
   bind through whatever the cluster's default provisioner is. On a cluster with no default
   StorageClass they stay `Pending` and the database pods never start.
