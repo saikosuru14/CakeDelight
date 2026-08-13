@@ -1,0 +1,85 @@
+# web-ui - the client application component of the architecture (capstone brief section 7,
+# "Client application or user interface").
+#
+# It owns no data and holds no business rules. nginx does two jobs: serve the static client
+# (index.html, styles.css, app.js) and reverse-proxy /api/ to the gateway. Because the
+# browser therefore talks to a single origin, there is no CORS configuration to maintain.
+#
+# The server block comes from the web-ui-config ConfigMap, mounted over
+# /etc/nginx/conf.d/. The image ships a Compose-flavoured default.conf that would not
+# resolve DNS in a pod - see configmap.yaml for why.
+#
+# The image is built locally by docker compose and pushed to no registry, so
+# imagePullPolicy is IfNotPresent. Load it into the cluster first, e.g.
+#   minikube image load cake-delight/web-ui:1.0.0
+# or, for kind:
+#   kind load docker-image cake-delight/web-ui:1.0.0
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-ui
+  namespace: cake-delight
+  labels:
+    app.kubernetes.io/name: web-ui
+    app.kubernetes.io/component: client
+    app.kubernetes.io/part-of: cake-delight
+    app.kubernetes.io/version: "1.0.0"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: web-ui
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: web-ui
+        app.kubernetes.io/component: client
+        app.kubernetes.io/part-of: cake-delight
+        app.kubernetes.io/version: "1.0.0"
+    spec:
+      containers:
+        - name: web-ui
+          image: cake-delight/web-ui:1.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 80
+          volumeMounts:
+            - name: nginx-conf
+              mountPath: /etc/nginx/conf.d
+              readOnly: true
+          # Both probes hit /healthz, which nginx answers itself. Deliberately not
+          # /index.html and deliberately not an /api/ path: UI health is nginx health. A
+          # gateway that is still starting must not restart or de-register this pod.
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # Static file serving in nginx-alpine. Small on purpose, but a CPU request has to
+          # be present for the HorizontalPodAutoscaler to compute utilization.
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+      volumes:
+        - name: nginx-conf
+          configMap:
+            name: web-ui-config
+            items:
+              - key: default.conf
+                path: default.conf

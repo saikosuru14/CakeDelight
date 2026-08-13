@@ -1,0 +1,35 @@
+# web-ui external endpoint.
+#
+# NodePort, for the same reason as the gateway: this is a local single-node cluster with no
+# cloud load balancer and no ingress controller. Two NodePorts are externally reachable in
+# this deployment - 30090 for the browser client and 30080 for the gateway API. The four
+# microservices, PostgreSQL, and Kafka all stay ClusterIP, so 8081-8084, 5432, and 9092 are
+# never reachable from outside the cluster (Requirement 9.1).
+#
+# The client itself only ever calls its own origin: the browser hits
+# http://<node-ip>:30090/api/... and nginx in this pod forwards it to api-gateway:8080
+# inside the cluster. Exposing 30080 as well is a convenience for curl and Postman, not
+# something the UI depends on.
+#
+# Reach it at http://<node-ip>:30090 , or on minikube:
+#   minikube service web-ui -n cake-delight --url
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-ui
+  namespace: cake-delight
+  labels:
+    app.kubernetes.io/name: web-ui
+    app.kubernetes.io/component: client
+    app.kubernetes.io/part-of: cake-delight
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: web-ui
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      # Fixed so the storefront URL is stable across re-applies. 30090 sits inside the
+      # default 30000-32767 NodePort range and mirrors the 8090 used under Compose.
+      nodePort: 30090

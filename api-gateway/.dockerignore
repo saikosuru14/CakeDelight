@@ -1,0 +1,23 @@
+# Keep local build output and IDE metadata out of the image build context.
+target/
+*.jar
+*.log
+
+# IDE / editor
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.project
+.classpath
+.factorypath
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Docker
+Dockerfile
+.dockerignore

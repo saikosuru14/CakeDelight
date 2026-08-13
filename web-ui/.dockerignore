@@ -1,0 +1,22 @@
+# The image is nginx plus four files: nginx.conf, index.html, styles.css, app.js.
+# Everything below is either not needed at runtime or would be dead weight in the context.
+
+# The no-Docker fallback server. It replaces nginx, so it has no business inside the
+# nginx image.
+dev-server.js
+
+# IDE / editor
+.idea/
+.vscode/
+*.iml
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Docker
+Dockerfile
+.dockerignore

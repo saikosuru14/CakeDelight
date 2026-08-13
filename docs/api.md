@@ -144,7 +144,7 @@ Each component keeps its own copy of the `ErrorResponse` record; there is no sha
 | `ORDER_NOT_FOUND` | 404 | order | Order identifier not stored, on the order read or the confirmation call |
 | `BASKET_EMPTY` | 400 | order | Checkout for a customer whose basket holds no item; no order is created |
 | `CAKE_UNAVAILABLE` | 409 | order | Cake exists but `available == false` |
-| `CATALOG_UNAVAILABLE` | 503 | order | Catalog Service refused the connection or exceeded the 5 s connect/read timeout; no retry layer in this increment |
+| `CATALOG_UNAVAILABLE` | 503 | order | Catalog Service refused the connection or exceeded the 5 s connect/read timeout, and the bounded retry budget described above was exhausted |
 | `INTERNAL_ERROR` | 500 | catalog, order, rating, notification | Unhandled exception; the stack trace is logged at ERROR and the body carries a generic message |
 | `ROUTE_NOT_FOUND` | 404 | gateway | Request path matches no configured route |
 | `SERVICE_UNAVAILABLE` | 503 | gateway | `ConnectException` or `TimeoutException` anywhere in the cause chain; the message names the target service resolved from the matched route id, or "The target service" when no route matched |
@@ -397,7 +397,7 @@ Response `NotificationResponse[]`:
 |---|---|---|
 | `id` | UUID | Identifier of the attempt record |
 | `orderId` | UUID | |
-| `channel` | string | `EMAIL` — the only channel in this increment |
+| `channel` | string | `EMAIL` or `IN_APP`, whichever `cakedelight.notification.channel` selects. Exactly one channel is active at a time; there is no fan-out, so all records for one run carry the same value. Defaults to `EMAIL` |
 | `status` | enum | `SENT` or `FAILED` |
 | `attemptedAt` | instant | |
 

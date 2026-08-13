@@ -1,0 +1,67 @@
+# web-ui nginx server block for Kubernetes.
+#
+# Why this file exists at all: the copy baked into the image (web-ui/nginx.conf) is written
+# for Docker Compose. It sets `resolver 127.0.0.11`, which is Docker's embedded DNS and does
+# not exist in a Kubernetes pod, and it resolves the gateway through an nginx variable,
+# which *requires* a working resolver. Left as-is, every /api/ request in the cluster would
+# fail to resolve. This ConfigMap is mounted over /etc/nginx/conf.d/default.conf to replace
+# it, so one image runs in both places with no rebuild.
+#
+# The cluster version drops the resolver and names the upstream literally. nginx then
+# resolves `api-gateway` once at startup through the pod's /etc/resolv.conf, which points at
+# CoreDNS. That is the right trade here: unlike a Compose container, a ClusterIP Service
+# keeps the same virtual IP for its whole lifetime, so there is nothing to re-resolve. If
+# the api-gateway Service is ever deleted and recreated, restart this Deployment.
+#
+# No configuration and no credentials in here: the only value is an in-cluster Service name.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: web-ui-config
+  namespace: cake-delight
+  labels:
+    app.kubernetes.io/name: web-ui
+    app.kubernetes.io/component: client
+    app.kubernetes.io/part-of: cake-delight
+data:
+  default.conf: |
+    server {
+        listen 80;
+        server_name _;
+
+        root /usr/share/nginx/html;
+        index index.html;
+
+        add_header X-Content-Type-Options "nosniff" always;
+
+        # Static client.
+        location / {
+            try_files $uri $uri/ /index.html;
+        }
+
+        # The browser calls /api/... on this same origin; nginx forwards it unchanged to
+        # the gateway, which applies no StripPrefix. Same-origin means no CORS preflight
+        # and no Access-Control-* headers to keep in sync.
+        location /api/ {
+            proxy_pass http://api-gateway:8080;
+
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+
+            # Covers the gateway retry budget plus the order-service to catalog-service
+            # retry budget underneath it.
+            proxy_connect_timeout 5s;
+            proxy_send_timeout 30s;
+            proxy_read_timeout 30s;
+        }
+
+        # Probe target that never touches the gateway, so UI readiness reports on nginx
+        # only and the pod does not flap when a backend is slow to come up.
+        location = /healthz {
+            access_log off;
+            return 200 "ok\n";
+        }
+    }

@@ -1,0 +1,44 @@
+# web-ui - CPU-driven horizontal autoscaling
+# (capstone brief section 7 "Deployment, scaling, and service discovery should be handled
+# through Kubernetes", section 9 "scalability readiness").
+#
+# Safe to scale: nginx here serves four static files and proxies /api/. There is no session
+# state, no local disk write, and no database, so replicas are fully interchangeable and the
+# NodePort Service spreads connections across the ready endpoints.
+#
+# Scaling on CPU utilization requires a CPU request on the pod, because utilization is
+# measured as a percentage of the request. web-ui/deployment.yaml declares requests.cpu:
+# 50m, so averageUtilization 70 means roughly 35m of sustained CPU per pod before a
+# scale-up.
+#
+# Where scaling stops helping: adding web-ui replicas only widens the static-file and proxy
+# tier. Every /api/ call still lands on api-gateway, and from there on the owning service,
+# so a slow catalog read or a saturated gateway is unaffected by more UI pods. Scale those
+# instead.
+#
+# Requires metrics-server in the cluster. Without it the HPA reports <unknown> for CPU and
+# never scales - see k8s/README.md.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: web-ui
+  namespace: cake-delight
+  labels:
+    app.kubernetes.io/name: web-ui
+    app.kubernetes.io/component: client
+    app.kubernetes.io/part-of: cake-delight
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: web-ui
+  minReplicas: 1
+  # Modest ceiling on purpose: this is a single-node capstone demo cluster, not production.
+  maxReplicas: 3
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

@@ -22,6 +22,12 @@ Reference docs:
 
 - [`docs/api.md`](docs/api.md) — endpoint reference for all four services plus the gateway route table
 - [`docs/event-contract.md`](docs/event-contract.md) — `order.completed` payload contract
+- [`docs/DEMO.md`](docs/DEMO.md) — end-to-end demonstration, with the status codes, order id, and
+  totals actually captured on a live run
+- [`docs/capstone-traceability.md`](docs/capstone-traceability.md) — every item in the capstone brief
+  mapped to the code that satisfies it, and an honest list of what is unverified
+- [`k8s/README.md`](k8s/README.md) — apply procedure, secret handling, the scaling story, and known
+  gaps in the manifests
 
 ---
 
@@ -333,7 +339,8 @@ Then run the [walkthrough](#end-to-end-walkthrough) — it works unchanged again
 Manifests exist in `k8s/` and have **never been applied**: no cluster has been reached from this
 machine, so they are unvalidated. The committed Secrets carry `REPLACE_ME` placeholders that must be
 replaced first, and `kubectl apply -R -f k8s/` is required because plain `-f` is not recursive. Full
-instructions are in [Deploying to Kubernetes](#deploying-to-kubernetes).
+instructions are in [Deploying to Kubernetes](#deploying-to-kubernetes), with the longer form and the
+known gaps in [`k8s/README.md`](k8s/README.md).
 
 ---
 
@@ -576,6 +583,22 @@ Manifests live in `k8s/`, grouped by component. All resources are namespaced to 
 These manifests have never been applied to a cluster, so they are unvalidated at runtime. Treat the
 steps below as the intended procedure rather than a recorded one.
 
+[`k8s/README.md`](k8s/README.md) is the fuller version of this section: the complete DNS table, the
+image-loading step, which components have an HPA and why the databases and Kafka do not, and the known
+gaps. What follows here is the short path.
+
+### 0. Load the images
+
+Nothing is pushed to a registry and every Deployment sets `imagePullPolicy: IfNotPresent`, so build
+first and then load each image onto the node, or the pods sit in `ErrImageNeverPull`:
+
+```bash
+docker compose build
+for c in catalog-service order-service rating-service notification-service api-gateway web-ui; do
+  minikube image load cake-delight/$c:1.0.0
+done
+```
+
 ### 1. Replace the placeholder secrets
 
 Every committed `secret.yaml` carries `REPLACE_ME` values. They are placeholders, not credentials,
@@ -621,17 +644,25 @@ kubectl -n cake-delight rollout status deployment/api-gateway
 Databases and Kafka come up first; the services stay unready until their readiness probes pass,
 which is after Flyway has migrated.
 
-### 4. Reach the gateway
+### 4. Reach the gateway and the UI
 
-The gateway Service is a `NodePort`; every other Service is `ClusterIP`. For a local cluster, port
+Two Services are `NodePort` — `api-gateway` on 30080 and `web-ui` on 30090. Everything else is
+`ClusterIP`, so 8081–8084, 5432, and 9092 stay inside the cluster. For a local cluster, port
 forwarding is usually simpler:
 
 ```bash
-# long running, run this yourself
+# both long running, run these yourself
 kubectl -n cake-delight port-forward svc/api-gateway 8080:8080
+kubectl -n cake-delight port-forward svc/web-ui 8090:80
 ```
 
-The walkthrough below then works unchanged against `http://localhost:8080`.
+The walkthrough below then works unchanged against `http://localhost:8080`, and the storefront is at
+`http://localhost:8090` as usual.
+
+The UI pod runs the same image as Compose but with its nginx server block replaced from
+`k8s/web-ui/configmap.yaml`. The baked-in `web-ui/nginx.conf` sets `resolver 127.0.0.11`, which is
+Docker's embedded DNS and does not exist in a pod, so leaving it in place would break every `/api/`
+call in the cluster.
 
 ---
 
@@ -938,14 +969,19 @@ cakeDelight/
 ├── rating-service/
 ├── notification-service/
 ├── web-ui/                     # static browser client served by nginx
+├── postman/                    # collection + environment, requests in journey order
 ├── k8s/
+│   ├── README.md               # apply procedure, secrets, scaling, known gaps
 │   ├── namespace.yaml
 │   ├── postgres/               # one Deployment + Service + PVC per database
 │   ├── kafka/                  # single-node KRaft broker
-│   └── <component>/            # deployment, service, configmap, secret
+│   ├── web-ui/                 # deployment, service, configmap, hpa
+│   └── <component>/            # deployment, service, configmap, secret, hpa
 ├── docs/
 │   ├── api.md                  # endpoint reference
-│   └── event-contract.md       # order.completed payload contract
+│   ├── event-contract.md       # order.completed payload contract
+│   ├── DEMO.md                 # end-to-end demonstration with captured evidence
+│   └── capstone-traceability.md # brief item -> code, with verification status
 ├── docker-compose.yml
 └── README.md
 ```
